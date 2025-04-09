@@ -1,4 +1,3 @@
-
 # Smart Car Raspberry Pi Control Script with Full Logic + Gradio UI
 
 import serial
