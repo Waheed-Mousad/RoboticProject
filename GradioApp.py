@@ -22,7 +22,8 @@ scanning_event.clear()
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 time.sleep(2)
 ser.reset_input_buffer()
-
+scan_trigger_distance = 40
+resume_forward_distance = 80
 # === Globals ===
 latest_readings = {"distance": 0, "ir": [0, 0, 0]}
 current_mode = "manual"  # manual, line, avoid
@@ -77,7 +78,7 @@ def decide_and_act():
 
         # === MINOR UPDATE: New area scan logic ===
         print("obstacle mode")
-        if dist <= 40:
+        if dist <= scan_trigger_distance:
             scanning_event.set()
             print("Obstacle detected, performing area scan")
             send('s')  # Stop immediately
@@ -91,7 +92,10 @@ def decide_and_act():
             try:
                 start = time.time()
                 print("Waiting for scan values...")
-                while time.time() - start < 5.0:
+                while time.time() - start < 2.0:
+                    if current_mode == "manual" or current_mode == "line":
+                        scanning_event.clear()
+                        return
                     line = ser.readline().decode('utf-8').strip()
                     print(f"Received line: {line}")
                     if line.startswith('SCAN:'):
@@ -102,9 +106,10 @@ def decide_and_act():
                             send('r')
                         else:
                             send('l')
-                        while latest_readings["distance"] < 60:
+                        start = time.time()
+                        while latest_readings["distance"] < resume_forward_distance and time.time() - start < 2.0:
                             scanning_event.clear()
-                            if current_mode == "manual":
+                            if current_mode == "manual" or current_mode == "line":
                                 return
                             time.sleep(0.05)
 
@@ -122,12 +127,20 @@ def decide_and_act():
             send('f')
             time.sleep(0.05)
 
-
+def update_scan_thresholds(scan_val, resume_val):
+    global scan_trigger_distance, resume_forward_distance
+    # Enforce resume > scan
+    if resume_val <= scan_val:
+        resume_val = scan_val + 1  # ensure it's strictly greater
+    scan_trigger_distance = scan_val
+    resume_forward_distance = resume_val
+    return scan_val, resume_val
 # === Gradio Control Functions ===
 def update():
+    global current_mode
     if current_mode in ["line", "avoid"]:
         decide_and_act()
-    return latest_readings["distance"], *latest_readings["ir"]
+    return current_mode, latest_readings["distance"], *latest_readings["ir"]
 
 def set_mode_manual():
     print("manual mode")
@@ -185,23 +198,35 @@ with gr.Blocks() as app:
         calL = gr.Slider(-100, 100, value=44, label="Left Calibration")
         calR = gr.Slider(-100, 100, value=-44, label="Right Calibration")
 
+    with gr.Row(visible=False) as avoid_controls:
+        scan_slider = gr.Slider(minimum=0, maximum=100, value=40, step=1, label="Scan Trigger Distance")
+        resume_slider = gr.Slider(minimum=0, maximum=200, value=80, step=1, label="Forward Resume Distance")
+
     manual.click(set_mode_manual, outputs=mode)
     line.click(set_mode_line, outputs=mode)
     avoid.click(set_mode_avoid, outputs=mode)
 
-    f.click(lambda: manual_command('f'), outputs=[dist, irL, irM, irR])
-    b.click(lambda: manual_command('b'), outputs=[dist, irL, irM, irR])
-    l.click(lambda: manual_command('l'), outputs=[dist, irL, irM, irR])
-    r.click(lambda: manual_command('r'), outputs=[dist, irL, irM, irR])
-    s.click(lambda: manual_command('s'), outputs=[dist, irL, irM, irR])
+    f.click(lambda: manual_command('f'), outputs=[mode, dist, irL, irM, irR])
+    b.click(lambda: manual_command('b'), outputs=[mode, dist, irL, irM, irR])
+    l.click(lambda: manual_command('l'), outputs=[mode, dist, irL, irM, irR])
+    r.click(lambda: manual_command('r'), outputs=[mode, dist, irL, irM, irR])
+    s.click(lambda: manual_command('s'), outputs=[mode, dist, irL, irM, irR])
 
     calL.change(lambda v: send_calibration(v, calR.value), inputs=calL)
     calR.change(lambda v: send_calibration(calL.value, v), inputs=calR)
+
+    scan_slider.change(update_scan_thresholds, inputs=[scan_slider, resume_slider],
+                       outputs=[scan_slider, resume_slider])
+    resume_slider.change(update_scan_thresholds, inputs=[scan_slider, resume_slider],
+                         outputs=[scan_slider, resume_slider])
+
+    mode.change(lambda m: gr.update(visible=(m == "avoid")), inputs=mode, outputs=avoid_controls)
+
 
     def update_ui():
         return update()
 
     timer = gr.Timer(0.5)
-    timer.tick(fn=update_ui, outputs=[dist, irL, irM, irR])
+    timer.tick(fn=update_ui, outputs=[mode,dist, irL, irM, irR])
 
 app.launch(server_name="0.0.0.0", server_port=7860)
