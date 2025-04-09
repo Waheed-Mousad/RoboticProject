@@ -68,18 +68,38 @@ def decide_and_act():
         else:
             send('s')
 
+
     elif current_mode == "avoid":
-        if dist < 30:
-            send('s')
-            time.sleep(0.2)
-            send('b')
-            time.sleep(0.4)
-            if irR == 0:
-                send('r')
-            else:
-                send('l')
-            time.sleep(0.5)
-            send('f')
+
+        # === MINOR UPDATE: New area scan logic ===
+
+        if dist <= 40:
+            send('s')  # Stop immediately
+            time.sleep(0.05)
+            send('A')  # Ask Arduino to perform area scan
+            time.sleep(1.2)  # Give Arduino time to scan and send back values
+            # Read scan values from serial (expects: M,R,L)
+
+            try:
+                start = time.time()
+                while time.time() - start < 2.0:
+                    line = ser.readline().decode('utf-8').strip()
+                    if line.startswith("SCAN:"):
+                        _, values = line.split(":")
+                        m, r, l = map(int, values.split(","))
+                        if r > l:
+                            send('r')
+                        else:
+                            send('l')
+                        while latest_readings["distance"] < 60:
+                            time.sleep(0.05)
+                        send('s')
+                        time.sleep(0.05)
+                        send('f')
+                        break  # stop the wait loop after handling SCAN
+            except:
+                pass
+
         else:
             send('f')
 
