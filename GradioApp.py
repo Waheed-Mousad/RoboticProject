@@ -77,7 +77,7 @@ def decide_and_act():
             send('s')  # Stop immediately
             time.sleep(0.05)
             send('A')  # Ask Arduino to perform area scan
-            time.sleep(1.2)  # Give Arduino time to scan and send back values
+            time.sleep(2.2)  # Give Arduino time to scan and send back values
             # Read scan values from serial (expects: M,R,L)
 
             try:
