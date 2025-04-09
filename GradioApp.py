@@ -16,8 +16,9 @@ for p in ports:
 if SERIAL_PORT is None:
     raise Exception("Arduino not found. Please connect the device.")
 
-BAUD_RATE = 115200
-
+BAUD_RATE = 9600
+scanning_event = threading.Event()
+scanning_event.clear()
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 time.sleep(2)
 ser.reset_input_buffer()
@@ -30,18 +31,19 @@ current_mode = "manual"  # manual, line, avoid
 def read_serial():
     global latest_readings
     while True:
-        try:
-            line = ser.readline().decode('utf-8').strip()
-            if not line:
+        while not scanning_event.is_set():
+            try:
+                line = ser.readline().decode('utf-8').strip()
+                if not line:
+                    continue
+                parts = line.split(',')
+                if len(parts) == 4:
+                    latest_readings = {
+                        "distance": int(parts[0]),
+                        "ir": [int(parts[1]), int(parts[2]), int(parts[3])]
+                    }
+            except:
                 continue
-            parts = line.split(',')
-            if len(parts) == 4:
-                latest_readings = {
-                    "distance": int(parts[0]),
-                    "ir": [int(parts[1]), int(parts[2]), int(parts[3])]
-                }
-        except:
-            continue
 
 threading.Thread(target=read_serial, daemon=True).start()
 
@@ -55,6 +57,8 @@ def send_calibration(left, right):
     send(f"R{right}\n")
 
 def decide_and_act():
+    global current_mode
+    scanning_event.clear()
     dist = latest_readings["distance"]
     irL, irM, irR = latest_readings["ir"]
 
@@ -72,36 +76,52 @@ def decide_and_act():
     elif current_mode == "avoid":
 
         # === MINOR UPDATE: New area scan logic ===
-
+        print("obstacle mode")
         if dist <= 40:
+            scanning_event.set()
+            print("Obstacle detected, performing area scan")
             send('s')  # Stop immediately
             time.sleep(0.05)
             send('A')  # Ask Arduino to perform area scan
-            time.sleep(2.2)  # Give Arduino time to scan and send back values
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            time.sleep(2.5)  # Give Arduino time to scan and send back values
             # Read scan values from serial (expects: M,R,L)
 
             try:
                 start = time.time()
-                while time.time() - start < 2.0:
+                print("Waiting for scan values...")
+                while time.time() - start < 5.0:
                     line = ser.readline().decode('utf-8').strip()
-                    if line.startswith("SCAN:"):
+                    print(f"Received line: {line}")
+                    if line.startswith('SCAN:'):
                         _, values = line.split(":")
                         m, r, l = map(int, values.split(","))
+                        print(f"Scan values: M={m}, R={r}, L={l}")
                         if r > l:
                             send('r')
                         else:
                             send('l')
                         while latest_readings["distance"] < 60:
+                            scanning_event.clear()
+                            if current_mode == "manual":
+                                return
                             time.sleep(0.05)
+
                         send('s')
                         time.sleep(0.05)
                         send('f')
+
+
                         break  # stop the wait loop after handling SCAN
             except:
+                print("Error reading scan values")
                 pass
 
         else:
             send('f')
+            time.sleep(0.05)
+
 
 # === Gradio Control Functions ===
 def update():
@@ -110,7 +130,9 @@ def update():
     return latest_readings["distance"], *latest_readings["ir"]
 
 def set_mode_manual():
+    print("manual mode")
     global current_mode
+    scanning_event.clear()
     current_mode = "manual"
     send('s')
     return "manual"
@@ -128,7 +150,10 @@ def set_mode_avoid():
     return "avoid"
 
 def manual_command(cmd):
+    print(f"manual command: {cmd}")
     global current_mode
+    scanning_event.clear()
+    print(scanning_event.is_set())
     current_mode = "manual"
     send(cmd)
     return update()
