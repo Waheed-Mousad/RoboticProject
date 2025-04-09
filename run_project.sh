@@ -2,5 +2,5 @@
 # Run script for Smart Car Project
 
 set -e
-source smartcar-env/bin/activate
+source venv/bin/activate
 python GradioApp.py

@@ -1,6 +1,6 @@
 @echo off
 REM Run script for Smart Car Project (Windows)
 
-call smartcar-env\Scripts\activate
+call venv\Scripts\activate
 python GradioApp.py
 pause
