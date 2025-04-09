@@ -7,7 +7,7 @@ const int IR_M_PIN = 4;
 const int IR_R_PIN = 10;
 const int TRIG_PIN = A5;
 const int ECHO_PIN = A4;
-const int SERVO_PIN = 12;
+
 
 const int ENA = 5;
 const int ENB = 6;
@@ -20,7 +20,9 @@ const int IN4 = 11;
 int leftOffset = 44;    // default calibration
 int rightOffset = -44;
 char currentCommand = 's'; // 's' = stop
-Servo servoMotor;
+Servo servo;
+bool scanning = false;
+bool cancelScan = false;
 #define carSpeed 200
 // === Setup ===
 void setup() {
@@ -39,13 +41,43 @@ void setup() {
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
 
-  servoMotor.attach(SERVO_PIN);
-  servoMotor.write(90); // center
+  servo.attach(3, 500, 2400); // 500: 0 degree  2400: 180 degree
+  servo.write(90);
 
   stopMotors();
 }
 
 // === Helper Functions ===
+
+void delays(unsigned long t) {
+  for (unsigned long i = 0; i < t; i++) {
+    if (Serial.available() > 0) {
+    // Wait a bit to receive the full command
+    delay(10); 
+    
+    char cmd = Serial.read();
+    if (cmd == 'f' || cmd == 'b' || cmd == 'l' || cmd == 'r' || cmd == 's') {
+      handleCommand(cmd);
+      cancelScan = true;
+    } else if (cmd == 'L' || cmd == 'R') {
+      // Make sure we have a full int value
+      delay(10);
+      int val = Serial.parseInt();
+      if (cmd == 'L') leftOffset = val;
+      if (cmd == 'R') rightOffset = val;
+      
+      // Immediately apply new calibration
+      handleCommand(currentCommand);
+    
+    // Clear any extra characters in buffer
+    while (Serial.available() > 0) {
+      Serial.read();
+    }
+  }
+    
+  }
+}
+}
 void stopMotors() {
   digitalWrite(ENA, LOW);
   digitalWrite(ENB, LOW);
@@ -119,6 +151,45 @@ void handleCommand(char cmd) {
   }
 }
 
+// === NEW: Area scan for Pi's "A" command ===
+void areaScanAndSend() {
+  if (scanning) return;
+  scanning = true;
+  cancelScan = false;
+
+  servo.write(90);
+  delays(25);
+  if (cancelScan) goto end;
+
+  int m = measureDistance();
+
+  servo.write(10);
+  delays(25);
+  if (cancelScan) goto end;
+
+  int r = measureDistance();
+
+  servo.write(170);
+  delays(25);
+  if (cancelScan) goto end;
+
+  int l = measureDistance();
+
+  servo.write(90);
+  delays(25);
+  if (cancelScan) goto end;
+
+  Serial.print("SCAN:");
+  Serial.print(m);
+  Serial.print(",");
+  Serial.print(r);
+  Serial.print(",");
+  Serial.println(l);
+
+end:
+  scanning = false;
+}
+
 
 // === Loop ===
 void loop() {
@@ -139,6 +210,8 @@ void loop() {
       
       // Immediately apply new calibration
       handleCommand(currentCommand);
+    } else  if (cmd == 'A') {
+    areaScanAndSend();
     }
     
     // Clear any extra characters in buffer
