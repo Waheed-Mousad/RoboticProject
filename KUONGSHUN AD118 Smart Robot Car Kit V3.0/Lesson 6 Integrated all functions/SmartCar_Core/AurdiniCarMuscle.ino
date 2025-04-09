@@ -161,25 +161,25 @@ void areaScanAndSend() {
   cancelScan = false;
 
   servo.write(90);
-  delays(10);
+  delays(15);
   if (cancelScan) goto end;
 
   int m = measureDistance();
 
   servo.write(10);
-  delays(10);
+  delays(15);
   if (cancelScan) goto end;
 
   int r = measureDistance();
 
   servo.write(170);
-  delays(10);
+  delays(15);
   if (cancelScan) goto end;
 
   int l = measureDistance();
 
   servo.write(90);
-  delays(10);
+  delays(15);
   if (cancelScan) goto end;
   Serial.println("hello test");  // Flush any partial previous line
   delay(10);
