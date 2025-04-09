@@ -26,7 +26,7 @@ bool cancelScan = false;
 #define carSpeed 200
 // === Setup ===
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(9600);
 
   pinMode(IR_L_PIN, INPUT);
   pinMode(IR_M_PIN, INPUT);
@@ -51,6 +51,7 @@ void setup() {
 
 void delays(unsigned long t) {
   for (unsigned long i = 0; i < t; i++) {
+    /*
     if (Serial.available() > 0) {
     // Wait a bit to receive the full command
     delay(10); 
@@ -73,9 +74,12 @@ void delays(unsigned long t) {
     while (Serial.available() > 0) {
       Serial.read();
     }
-  }
     
+    
+  }  
   }
+  */
+  delay(50);
 }
 }
 void stopMotors() {
@@ -132,7 +136,6 @@ long measureDistance() {
 
   long duration = pulseIn(ECHO_PIN, HIGH, 30000); // 30ms timeout
   long dist = duration / 58;
-  Serial.println(dist);
   return (dist == 0 || dist > 400) ? 400 : dist;
 }
 
@@ -158,33 +161,35 @@ void areaScanAndSend() {
   cancelScan = false;
 
   servo.write(90);
-  delays(25);
+  delays(10);
   if (cancelScan) goto end;
 
   int m = measureDistance();
 
   servo.write(10);
-  delays(25);
+  delays(10);
   if (cancelScan) goto end;
 
   int r = measureDistance();
 
   servo.write(170);
-  delays(25);
+  delays(10);
   if (cancelScan) goto end;
 
   int l = measureDistance();
 
   servo.write(90);
-  delays(25);
+  delays(10);
   if (cancelScan) goto end;
-
+  Serial.println("hello test");  // Flush any partial previous line
+  delay(10);
   Serial.print("SCAN:");
   Serial.print(m);
-  Serial.print(",");
+  Serial.print(',');
   Serial.print(r);
-  Serial.print(",");
+  Serial.print(',');
   Serial.println(l);
+  delay(50);
 
 end:
   scanning = false;
@@ -211,6 +216,7 @@ void loop() {
       // Immediately apply new calibration
       handleCommand(currentCommand);
     } else  if (cmd == 'A') {
+    delay(10);
     areaScanAndSend();
     }
     
