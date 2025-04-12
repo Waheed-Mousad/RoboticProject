@@ -24,10 +24,13 @@ time.sleep(2)
 ser.reset_input_buffer()
 scan_trigger_distance = 40
 resume_forward_distance = 80
+turning_threshhold = 1
 # === Globals ===
 latest_readings = {"distance": 0, "ir": [0, 0, 0]}
 current_mode = "manual"  # manual, line, avoid
-
+latest_mode = "manual"
+thread = False
+turn_to_left = True
 # === Serial Read Thread ===
 def read_serial():
     global latest_readings
@@ -57,6 +60,34 @@ def send_calibration(left, right):
     send(f"L{left}\n")
     send(f"R{right}\n")
 
+def avoid_obstacle():
+    global turn_to_left
+    print("obstacle mode")
+    while thread:
+        dist = latest_readings["distance"]
+        if dist < scan_trigger_distance:
+            send('s')
+            time.sleep(0.05)
+            start = time.time()
+            if turn_to_left:
+                send('l')
+            else:
+                send('r')
+
+            while latest_readings["distance"] < resume_forward_distance or (time.time() - start) < 0.5:
+                time.sleep(0.01)
+                print(latest_readings["distance"] < resume_forward_distance or (time.time() - start) < 0.5)
+
+            if (time.time() - start) > 1:
+                #reverse turn to left
+                turn_to_left = not turn_to_left
+
+
+        send('f')
+        time.sleep(0.05)
+    print("exisiting thread")
+
+
 def decide_and_act():
     global current_mode
     scanning_event.clear()
@@ -73,60 +104,6 @@ def decide_and_act():
         else:
             send('s')
 
-
-    elif current_mode == "avoid":
-
-        # === MINOR UPDATE: New area scan logic ===
-        print("obstacle mode")
-        if dist <= scan_trigger_distance:
-            scanning_event.set()
-            print("Obstacle detected, performing area scan")
-            send('s')  # Stop immediately
-            time.sleep(0.05)
-            send('A')  # Ask Arduino to perform area scan
-            ser.reset_input_buffer()
-            ser.reset_output_buffer()
-            time.sleep(2.5)  # Give Arduino time to scan and send back values
-            # Read scan values from serial (expects: M,R,L)
-
-            try:
-                start = time.time()
-                print("Waiting for scan values...")
-                while time.time() - start < 2.0:
-                    if current_mode == "manual" or current_mode == "line":
-                        scanning_event.clear()
-                        return
-                    line = ser.readline().decode('utf-8').strip()
-                    print(f"Received line: {line}")
-                    if line.startswith('SCAN:'):
-                        _, values = line.split(":")
-                        m, r, l = map(int, values.split(","))
-                        print(f"Scan values: M={m}, R={r}, L={l}")
-                        if r > l:
-                            send('r')
-                        else:
-                            send('l')
-                        start = time.time()
-                        while latest_readings["distance"] < resume_forward_distance and time.time() - start < 2.0:
-                            scanning_event.clear()
-                            if current_mode == "manual" or current_mode == "line":
-                                return
-                            time.sleep(0.05)
-
-                        send('s')
-                        time.sleep(0.05)
-                        send('f')
-
-
-                        break  # stop the wait loop after handling SCAN
-            except:
-                print("Error reading scan values")
-                pass
-
-        else:
-            send('f')
-            time.sleep(0.05)
-
 def update_scan_thresholds(scan_val, resume_val):
     global scan_trigger_distance, resume_forward_distance
     # Enforce resume > scan
@@ -138,12 +115,22 @@ def update_scan_thresholds(scan_val, resume_val):
 # === Gradio Control Functions ===
 def update():
     global current_mode
-    if current_mode in ["line", "avoid"]:
-        decide_and_act()
+    global latest_mode
+    global thread
+    if current_mode != latest_mode:
+        print("mode changed from:", latest_mode, "to ", current_mode)
+        latest_mode = current_mode
+        if latest_mode == "avoid":
+            thread = True
+            threading.Thread(target=avoid_obstacle, daemon=True).start()
+        if latest_mode == "line":
+            thread = True
+            pass
+        if latest_mode == "manual":
+            thread = False
     return current_mode, latest_readings["distance"], *latest_readings["ir"]
 
 def set_mode_manual():
-    print("manual mode")
     global current_mode
     scanning_event.clear()
     current_mode = "manual"
@@ -166,7 +153,6 @@ def manual_command(cmd):
     print(f"manual command: {cmd}")
     global current_mode
     scanning_event.clear()
-    print(scanning_event.is_set())
     current_mode = "manual"
     send(cmd)
     return update()
@@ -189,10 +175,12 @@ with gr.Blocks() as app:
 
     with gr.Row():
         f = gr.Button("↑ Forward")
-        l = gr.Button("← Left")
-        s = gr.Button("■ Stop")
-        r = gr.Button("→ Right")
         b = gr.Button("↓ Back")
+        l = gr.Button("← Left")
+        r = gr.Button("→ Right")
+        s = gr.Button("■ Stop")
+
+
 
     with gr.Row():
         calL = gr.Slider(-100, 100, value=44, label="Left Calibration")
