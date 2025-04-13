@@ -85,24 +85,31 @@ def avoid_obstacle():
 
         send('f')
         time.sleep(0.05)
-    print("exisiting thread")
+    print("exiting obstacle avoidance thread")
 
-
-def decide_and_act():
-    global current_mode
-    scanning_event.clear()
-    dist = latest_readings["distance"]
-    irL, irM, irR = latest_readings["ir"]
-
-    if current_mode == "line":
-        if irM:
+def avoid_line():
+    print("line mode")
+    while thread:
+        if latest_readings["ir"][0] == 0 and latest_readings["ir"][1] == 0 and latest_readings["ir"][2] == 0:
             send('f')
-        elif irL:
-            send('l')
-        elif irR:
+        elif latest_readings["ir"][0] == 1 and latest_readings["ir"][1] == 0 and latest_readings["ir"][2] == 0:
             send('r')
-        else:
-            send('s')
+        elif latest_readings["ir"][0] == 0 and latest_readings["ir"][1] == 0 and latest_readings["ir"][2] == 1:
+            send('l')
+        elif latest_readings["ir"][0] == 1 and latest_readings["ir"][1] == 0 and latest_readings["ir"][2] == 1:
+            send('f')
+        elif latest_readings["ir"][0] == 1 and latest_readings["ir"][1] == 1 and latest_readings["ir"][2] == 0:
+            send('r')
+        elif latest_readings["ir"][0] == 0 and latest_readings["ir"][1] == 1 and latest_readings["ir"][2] == 1:
+            send('l')
+        elif latest_readings["ir"][0] == 1 and latest_readings["ir"][1] == 1 and latest_readings["ir"][2] == 1:
+            send('l')
+        elif latest_readings["ir"][0] == 0 and latest_readings["ir"][1] == 1 and latest_readings["ir"][2] == 0:
+            send('l')
+        time.sleep(0.05)
+        
+    print("exiting line avoidance thread")
+
 
 def update_scan_thresholds(scan_val, resume_val):
     global scan_trigger_distance, resume_forward_distance
@@ -121,11 +128,15 @@ def update():
         print("mode changed from:", latest_mode, "to ", current_mode)
         latest_mode = current_mode
         if latest_mode == "avoid":
+            thread = False
+            time.sleep(2)
             thread = True
             threading.Thread(target=avoid_obstacle, daemon=True).start()
         if latest_mode == "line":
+            thread = False
+            time.sleep(2)
             thread = True
-            pass
+            threading.Thread(target=avoid_line, daemon=True).start()
         if latest_mode == "manual":
             thread = False
     return current_mode, latest_readings["distance"], *latest_readings["ir"]
