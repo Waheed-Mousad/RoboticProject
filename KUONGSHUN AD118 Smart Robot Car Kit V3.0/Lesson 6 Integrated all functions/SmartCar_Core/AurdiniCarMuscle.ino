@@ -3,7 +3,7 @@
 
 // === Pin Definitions ===
 const int IR_L_PIN = 2;
-const int IR_M_PIN = 4;
+const int IR_M_PIN = A0;
 const int IR_R_PIN = 10;
 const int TRIG_PIN = A5;
 const int ECHO_PIN = A4;
@@ -20,9 +20,7 @@ const int IN4 = 11;
 int leftOffset = 44;    // default calibration
 int rightOffset = -44;
 char currentCommand = 's'; // 's' = stop
-Servo servo;
-bool scanning = false;
-bool cancelScan = false;
+
 #define carSpeed 200
 // === Setup ===
 void setup() {
@@ -41,8 +39,6 @@ void setup() {
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
 
-  servo.attach(3, 500, 2400); // 500: 0 degree  2400: 180 degree
-  servo.write(90);
 
   stopMotors();
 }
@@ -151,7 +147,7 @@ void loop() {
   // Read sensors
   long distance = measureDistance();
   int irL = digitalRead(IR_L_PIN);
-  int irM = digitalRead(IR_M_PIN);
+  int irM = analogRead(IR_M_PIN);
   int irR = digitalRead(IR_R_PIN);
 
   // Send data: DISTANCE, IR_L, IR_M, IR_R
