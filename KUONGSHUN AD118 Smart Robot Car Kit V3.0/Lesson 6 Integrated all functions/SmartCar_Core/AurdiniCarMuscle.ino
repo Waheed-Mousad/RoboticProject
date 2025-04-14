@@ -48,40 +48,6 @@ void setup() {
 }
 
 // === Helper Functions ===
-
-void delays(unsigned long t) {
-  for (unsigned long i = 0; i < t; i++) {
-    /*
-    if (Serial.available() > 0) {
-    // Wait a bit to receive the full command
-    delay(10); 
-    
-    char cmd = Serial.read();
-    if (cmd == 'f' || cmd == 'b' || cmd == 'l' || cmd == 'r' || cmd == 's') {
-      handleCommand(cmd);
-      cancelScan = true;
-    } else if (cmd == 'L' || cmd == 'R') {
-      // Make sure we have a full int value
-      delay(10);
-      int val = Serial.parseInt();
-      if (cmd == 'L') leftOffset = val;
-      if (cmd == 'R') rightOffset = val;
-      
-      // Immediately apply new calibration
-      handleCommand(currentCommand);
-    
-    // Clear any extra characters in buffer
-    while (Serial.available() > 0) {
-      Serial.read();
-    }
-    
-    
-  }  
-  }
-  */
-  delay(50);
-}
-}
 void stopMotors() {
   digitalWrite(ENA, LOW);
   digitalWrite(ENB, LOW);
@@ -154,47 +120,6 @@ void handleCommand(char cmd) {
   }
 }
 
-// === NEW: Area scan for Pi's "A" command ===
-void areaScanAndSend() {
-  if (scanning) return;
-  scanning = true;
-  cancelScan = false;
-
-  servo.write(90);
-  delays(15);
-  if (cancelScan) goto end;
-
-  int m = measureDistance();
-
-  servo.write(10);
-  delays(15);
-  if (cancelScan) goto end;
-
-  int r = measureDistance();
-
-  servo.write(170);
-  delays(15);
-  if (cancelScan) goto end;
-
-  int l = measureDistance();
-
-  servo.write(90);
-  delays(15);
-  if (cancelScan) goto end;
-  Serial.println("hello test");  // Flush any partial previous line
-  delay(10);
-  Serial.print("SCAN:");
-  Serial.print(m);
-  Serial.print(',');
-  Serial.print(r);
-  Serial.print(',');
-  Serial.println(l);
-  delay(50);
-
-end:
-  scanning = false;
-}
-
 
 // === Loop ===
 void loop() {
@@ -215,9 +140,6 @@ void loop() {
       
       // Immediately apply new calibration
       handleCommand(currentCommand);
-    } else  if (cmd == 'A') {
-    delay(10);
-    areaScanAndSend();
     }
     
     // Clear any extra characters in buffer
@@ -235,11 +157,11 @@ void loop() {
   // Send data: DISTANCE, IR_L, IR_M, IR_R
   Serial.print(distance);
   Serial.print(',');
-  Serial.print(irL ? 1 : 0);
+  Serial.print(irL);
   Serial.print(',');
-  Serial.print(irM ? 1 : 0);
+  Serial.print(irM);
   Serial.print(',');
-  Serial.println(irR ? 1 : 0);
+  Serial.println(irR);
 
   delay(50);  // ~20Hz loop
 }
