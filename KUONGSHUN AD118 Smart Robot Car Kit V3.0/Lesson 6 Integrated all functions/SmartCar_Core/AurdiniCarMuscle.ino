@@ -17,13 +17,13 @@ const int IN3 = 9;
 const int IN4 = 11;
 
 // === Globals ===
-int leftOffset = 44;    // default calibration
-int rightOffset = -44;
+int leftOffset = 0;    // default calibration
+int rightOffset = 0;
 char currentCommand = 's'; // 's' = stop
 Servo servo;
 bool scanning = false;
 bool cancelScan = false;
-#define carSpeed 200
+int carSpeed = 100;
 // === Setup ===
 void setup() {
   Serial.begin(9600);
@@ -131,12 +131,13 @@ void loop() {
     char cmd = Serial.read();
     if (cmd == 'f' || cmd == 'b' || cmd == 'l' || cmd == 'r' || cmd == 's') {
       handleCommand(cmd);
-    } else if (cmd == 'L' || cmd == 'R') {
+    } else if (cmd == 'L' || cmd == 'R' || cmd == 'S') {
       // Make sure we have a full int value
       delay(10);
       int val = Serial.parseInt();
       if (cmd == 'L') leftOffset = val;
       if (cmd == 'R') rightOffset = val;
+      if (cmd == 'S') carSpeed = val;
       
       // Immediately apply new calibration
       handleCommand(currentCommand);

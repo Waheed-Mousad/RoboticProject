@@ -60,6 +60,9 @@ def send_calibration(left, right):
     send(f"L{left}\n")
     send(f"R{right}\n")
 
+def send_speed(speed):
+    send(f"S{speed}\n")
+
 def avoid_obstacle():
     global turn_to_left
     print("obstacle mode")
@@ -191,15 +194,16 @@ with gr.Blocks() as app:
         r = gr.Button("→ Right")
         s = gr.Button("■ Stop")
 
-
+    with gr.Row():
+        calL = gr.Slider(minimum=-100, maximum=155, value=0, label="Left Calibration")
+        calR = gr.Slider(minimum=-100, maximum=155, value=0, label="Right Calibration")
 
     with gr.Row():
-        calL = gr.Slider(-100, 100, value=44, label="Left Calibration")
-        calR = gr.Slider(-100, 100, value=-44, label="Right Calibration")
+        Speed = gr.Slider(minimum=0, maximum=255, value=100, label="Speed")
 
     with gr.Row(visible=False) as avoid_controls:
-        scan_slider = gr.Slider(minimum=0, maximum=100, value=40, step=1, label="Scan Trigger Distance")
-        resume_slider = gr.Slider(minimum=0, maximum=200, value=80, step=1, label="Forward Resume Distance")
+        scan_slider = gr.Slider(minimum=0, maximum=100, value=scan_trigger_distance, step=1, label="Scan Trigger Distance")
+        resume_slider = gr.Slider(minimum=0, maximum=200, value=resume_forward_distance, step=1, label="Forward Resume Distance")
 
     manual.click(set_mode_manual, outputs=mode)
     line.click(set_mode_line, outputs=mode)
@@ -213,6 +217,7 @@ with gr.Blocks() as app:
 
     calL.change(lambda v: send_calibration(v, calR.value), inputs=calL)
     calR.change(lambda v: send_calibration(calL.value, v), inputs=calR)
+    Speed.change(lambda v: send_speed(v), inputs=Speed)
 
     scan_slider.change(update_scan_thresholds, inputs=[scan_slider, resume_slider],
                        outputs=[scan_slider, resume_slider])
