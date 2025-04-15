@@ -17,8 +17,6 @@ if SERIAL_PORT is None:
     raise Exception("Arduino not found. Please connect the device.")
 
 BAUD_RATE = 9600
-scanning_event = threading.Event()
-scanning_event.clear()
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 time.sleep(2)
 ser.reset_input_buffer()
@@ -35,19 +33,19 @@ turn_to_left = True
 def read_serial():
     global latest_readings
     while True:
-        while not scanning_event.is_set():
-            try:
-                line = ser.readline().decode('utf-8').strip()
-                if not line:
-                    continue
-                parts = line.split(',')
-                if len(parts) == 4:
-                    latest_readings = {
-                        "distance": int(parts[0]),
-                        "ir": [int(parts[1]), int(parts[2]), int(parts[3])]
-                    }
-            except:
+
+        try:
+            line = ser.readline().decode('utf-8').strip()
+            if not line:
                 continue
+            parts = line.split(',')
+            if len(parts) == 4:
+                latest_readings = {
+                    "distance": int(parts[0]),
+                    "ir": [int(parts[1]), int(parts[2]), int(parts[3])]
+                }
+        except:
+            continue
 
 threading.Thread(target=read_serial, daemon=True).start()
 
@@ -79,9 +77,9 @@ def avoid_obstacle():
 
             while latest_readings["distance"] < resume_forward_distance or (time.time() - start) < 0.5:
                 time.sleep(0.01)
-                print(latest_readings["distance"] < resume_forward_distance or (time.time() - start) < 0.5)
 
-            if (time.time() - start) > 1:
+
+            if (time.time() - start) > 2:
                 #reverse turn to left
                 turn_to_left = not turn_to_left
 
@@ -122,6 +120,7 @@ def update_scan_thresholds(scan_val, resume_val):
     scan_trigger_distance = scan_val
     resume_forward_distance = resume_val
     return scan_val, resume_val
+
 # === Gradio Control Functions ===
 def update():
     global current_mode
@@ -146,7 +145,6 @@ def update():
 
 def set_mode_manual():
     global current_mode
-    scanning_event.clear()
     current_mode = "manual"
     send('s')
     return "manual"
@@ -166,7 +164,6 @@ def set_mode_avoid():
 def manual_command(cmd):
     print(f"manual command: {cmd}")
     global current_mode
-    scanning_event.clear()
     current_mode = "manual"
     send(cmd)
     return update()

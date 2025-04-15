@@ -1,14 +1,14 @@
 
-#include <Servo.h>
+
 
 // === Pin Definitions ===
-const int IR_L_PIN = 2;
+const int IR_L_PIN = 2; 
 const int IR_M_PIN = 4;
 const int IR_R_PIN = 10;
 const int TRIG_PIN = A5;
 const int ECHO_PIN = A4;
 
-
+// motors specific pins
 const int ENA = 5;
 const int ENB = 6;
 const int IN1 = 7;
@@ -20,10 +20,7 @@ const int IN4 = 11;
 int leftOffset = 0;    // default calibration
 int rightOffset = 0;
 char currentCommand = 's'; // 's' = stop
-Servo servo;
-bool scanning = false;
-bool cancelScan = false;
-int carSpeed = 100;
+int carSpeed = 100; // defualt
 // === Setup ===
 void setup() {
   Serial.begin(9600);
@@ -40,9 +37,6 @@ void setup() {
   pinMode(IN2, OUTPUT);
   pinMode(IN3, OUTPUT);
   pinMode(IN4, OUTPUT);
-
-  servo.attach(3, 500, 2400); // 500: 0 degree  2400: 180 degree
-  servo.write(90);
 
   stopMotors();
 }
