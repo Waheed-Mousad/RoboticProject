@@ -1,6 +1,3 @@
-
-
-
 // === Pin Definitions ===
 const int IR_L_PIN = 2; 
 const int IR_M_PIN = 4;

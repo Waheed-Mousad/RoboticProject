@@ -20,34 +20,60 @@ BAUD_RATE = 9600
 ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
 time.sleep(2)
 ser.reset_input_buffer()
+# === Globals ===
 scan_trigger_distance = 40
 resume_forward_distance = 80
 turning_threshhold = 1
-# === Globals ===
 latest_readings = {"distance": 0, "ir": [0, 0, 0]}
 current_mode = "manual"  # manual, line, avoid
 latest_mode = "manual"
 thread = False
 turn_to_left = True
+
 # === Serial Read Thread ===
+def update_reading_thread():
+    global latest_readings
+    while NORMAL:
+        read_serial()
+        time.sleep(0.05)
+
+
+
 def read_serial():
     global latest_readings
-    while True:
+    try:
+        ser.reset_input_buffer()
+        line = ser.readline().decode('utf-8').strip()
+        if not line:
+            return read_serial()
+        parts = line.split(',')
+        if len(parts) == 4:
+            latest_readings = {
+                "distance": int(parts[0]),
+                "ir": [int(parts[1]), int(parts[2]), int(parts[3])]
+            }
+    except:
+        print("Error reading serial data")
+        return
 
-        try:
-            line = ser.readline().decode('utf-8').strip()
-            if not line:
-                continue
-            parts = line.split(',')
-            if len(parts) == 4:
-                latest_readings = {
-                    "distance": int(parts[0]),
-                    "ir": [int(parts[1]), int(parts[2]), int(parts[3])]
-                }
-        except:
-            continue
 
-threading.Thread(target=read_serial, daemon=True).start()
+NORMAL = False
+reading_thread = None
+
+def start_normal_mode():
+    global NORMAL, reading_thread
+    if not NORMAL:
+        NORMAL = True
+        if reading_thread is None or not reading_thread.is_alive():
+            reading_thread = threading.Thread(target=update_reading_thread, daemon=True)
+            reading_thread.start()
+    # return "Normal mode activated"
+
+def stop_normal_mode():
+    global NORMAL
+    NORMAL = False
+    # return "ML mode activated"
+
 
 # === Arduino Command Sender ===
 def send(cmd):
@@ -60,7 +86,27 @@ def send_calibration(left, right):
 
 def send_speed(speed):
     send(f"S{speed}\n")
+# === ML mod functions     ===
+def ML_forward():
+    send('f')
+    time.sleep(1)
+    send('s')
 
+def ML_backward():
+    send('b')
+    time.sleep(1)
+    send('s')
+
+def ML_left():
+    send('l')
+    time.sleep(0.5)
+    send('s')
+
+def ML_right():
+    send('r')
+    time.sleep(0.5)
+    send('s')
+# === Normal mod functions ===
 def avoid_obstacle():
     global turn_to_left
     print("obstacle mode")
@@ -110,7 +156,6 @@ def avoid_line():
         time.sleep(0.05)
         
     print("exiting line avoidance thread")
-
 
 def update_scan_thresholds(scan_val, resume_val):
     global scan_trigger_distance, resume_forward_distance
@@ -172,36 +217,49 @@ def manual_command(cmd):
 with gr.Blocks() as app:
     gr.Markdown("# Smart Car Control Panel")
 
-    with gr.Row():
-        mode = gr.Textbox(label="Current Mode", value="manual")
-        dist = gr.Number(label="Distance (cm)")
-        irL = gr.Number(label="IR Left")
-        irM = gr.Number(label="IR Middle")
-        irR = gr.Number(label="IR Right")
+    with gr.Tab("Normal"):
+        gr.Markdown("Normal Mode Tab")
+        normal_init = gr.Button("Initialize Normal Mode (hidden)")
+        normal_init.click(start_normal_mode, outputs=[])
+        with gr.Row():
+            mode = gr.Textbox(label="Current Mode", value="manual")
+            dist = gr.Number(label="Distance (cm)")
+            irL = gr.Number(label="IR Left")
+            irM = gr.Number(label="IR Middle")
+            irR = gr.Number(label="IR Right")
 
-    with gr.Row():
-        manual = gr.Button("Manual Mode")
-        line = gr.Button("Line-Follow Mode")
-        avoid = gr.Button("Obstacle-Avoid Mode")
+        with gr.Row():
+            manual = gr.Button("Manual Mode")
+            line = gr.Button("Line-Follow Mode")
+            avoid = gr.Button("Obstacle-Avoid Mode")
 
-    with gr.Row():
-        f = gr.Button("↑ Forward")
-        b = gr.Button("↓ Back")
-        l = gr.Button("← Left")
-        r = gr.Button("→ Right")
-        s = gr.Button("■ Stop")
+        with gr.Row():
+            f = gr.Button("↑ Forward")
+            b = gr.Button("↓ Back")
+            l = gr.Button("← Left")
+            r = gr.Button("→ Right")
+            s = gr.Button("■ Stop")
 
-    with gr.Row():
-        calL = gr.Slider(minimum=-100, maximum=155, value=0, label="Left Calibration")
-        calR = gr.Slider(minimum=-100, maximum=155, value=0, label="Right Calibration")
+        with gr.Row():
+            calL = gr.Slider(minimum=-100, maximum=155, value=0, label="Left Calibration")
+            calR = gr.Slider(minimum=-100, maximum=155, value=0, label="Right Calibration")
 
-    with gr.Row():
-        Speed = gr.Slider(minimum=0, maximum=255, value=100, label="Speed")
+        with gr.Row():
+            Speed = gr.Slider(minimum=0, maximum=255, value=100, label="Speed")
 
-    with gr.Row(visible=False) as avoid_controls:
-        scan_slider = gr.Slider(minimum=0, maximum=100, value=scan_trigger_distance, step=1, label="Scan Trigger Distance")
-        resume_slider = gr.Slider(minimum=0, maximum=200, value=resume_forward_distance, step=1, label="Forward Resume Distance")
+        with gr.Row(visible=False) as avoid_controls:
+            scan_slider = gr.Slider(minimum=0, maximum=100, value=scan_trigger_distance, step=1, label="Scan Trigger Distance")
+            resume_slider = gr.Slider(minimum=0, maximum=200, value=resume_forward_distance, step=1, label="Forward Resume Distance")
 
+    with gr.Tab("ML"):
+        gr.Markdown("ML Mode Tab")
+        ml_init = gr.Button("Initialize ML Mode (hidden)")
+        ml_init.click(stop_normal_mode, outputs=[])
+
+        gr.Markdown("### Machine Learning Controls")
+        gr.Markdown("🚧 *Future machine learning features will go here.*")
+
+    # Click handlers (same as before)
     manual.click(set_mode_manual, outputs=mode)
     line.click(set_mode_line, outputs=mode)
     avoid.click(set_mode_avoid, outputs=mode)
@@ -223,11 +281,11 @@ with gr.Blocks() as app:
 
     mode.change(lambda m: gr.update(visible=(m == "avoid")), inputs=mode, outputs=avoid_controls)
 
-
     def update_ui():
         return update()
 
     timer = gr.Timer(0.5)
-    timer.tick(fn=update_ui, outputs=[mode,dist, irL, irM, irR])
+    timer.tick(fn=update_ui, outputs=[mode, dist, irL, irM, irR])
 
 app.launch(server_name="0.0.0.0", server_port=7860)
+
