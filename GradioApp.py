@@ -7,11 +7,15 @@ import gradio as gr
 import serial.tools.list_ports
 import os
 from model import QTrainer, Linear_QNet
+import model
+print(model.__file__)
+
 import numpy as np
 import random
 import torch
 from collections import deque
-# Try to auto-detect serial port
+from simulatedSerial import *
+# === Serial Setup ===
 ports = list(serial.tools.list_ports.comports())
 SERIAL_PORT = None
 for p in ports:
@@ -19,13 +23,18 @@ for p in ports:
         SERIAL_PORT = p.device
         break
 
-if SERIAL_PORT is None:
-    raise Exception("Arduino not found. Please connect the device.")
-model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 BAUD_RATE = 9600
-ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-time.sleep(2)
-ser.reset_input_buffer()
+
+if SERIAL_PORT is None:
+    print("⚠ Arduino not found. Switching to simulated serial.")
+    ser = SimulatedSerial()
+else:
+    ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+    time.sleep(2)
+    ser.reset_input_buffer()
+
+# === Model Path Setup ===
+model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 # === Globals ===
 # Please spare my life for spaghetti I will make is moduler later trust me bro
 #TODO Make it modular Trust me bro
@@ -59,7 +68,7 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 80 - self.n_game  # decrease randomness over time
+        self.epsilon = 30 - self.n_game  # decrease randomness over time
         final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
@@ -74,6 +83,7 @@ class CarAgent:
 ML_RUNNING = False  # controls overall training loop
 ML_PAUSED = False   # controls pause/resume between episodes
 agent = None
+total_score = 0
 scan_trigger_distance = 40
 resume_forward_distance = 80
 turning_threshhold = 1
@@ -84,14 +94,13 @@ thread = False
 turn_to_left = True
 NORMAL = False
 reading_thread = None
+SIMULATION = True
 # === Serial Read Thread ===
 def update_reading_thread():
     global latest_readings
     while NORMAL:
         read_serial()
         time.sleep(0.05)
-
-
 
 def read_serial():
     global latest_readings
@@ -272,9 +281,9 @@ def manual_command(cmd):
 
 def load_or_create_agent():
     global agent
-    model = Linear_QNet(7, 256, 3)
+    model = Linear_QNet(8, 256, 3)
     if os.path.exists(model_path):
-        model.load(file_name='model.pth')
+        model.load_model(file_name='model.pth')
         text = "✅ Loaded existing model."
     else:
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -309,65 +318,58 @@ def get_state_from_car(latest_readings):
     state = distance_onehot + [ir_left, ir_middle, ir_right]
     return np.array(state, dtype=int)
 
-def compute_reward(prev_state, next_state, paused):
-    # === Reward Parameters List ===
-    # [0] BASE_FORWARD_REWARD
-    # [1] OBSTACLE_VERY_CLOSE_PENALTY
-    # [2] ALL_WHITE_REWARD
-    # [3] SIDE_IR_BLACK_PENALTY
-    # [4] MIDDLE_IR_BLACK_PENALTY
-    # [5] ALL_IR_BLACK_PENALTY
-    # [6] RECOVERY_SIDE_REWARD
-    # [7] RECOVERY_MIDDLE_REWARD
-    # [8] MANUAL_PAUSE_PENALTY
-    reward_values = [
-        1,    # BASE_FORWARD_REWARD
-        -10,  # OBSTACLE_VERY_CLOSE_PENALTY
-        5,    # ALL_WHITE_REWARD
-        -5,   # SIDE_IR_BLACK_PENALTY
-        -20,  # MIDDLE_IR_BLACK_PENALTY
-        -50,  # ALL_IR_BLACK_PENALTY
-        10,   # RECOVERY_SIDE_REWARD
-        20,   # RECOVERY_MIDDLE_REWARD
-        -100  # MANUAL_PAUSE_PENALTY
-    ]
+DIST_REWARD_MATRIX = [
+    [-30, 10, 20, 20],  # very close
+    [-10, -10, 5, 5],  # close
+    [0, 0, 0.5, 0.5],  # far
+    [0, 0, 0.5, 0.5],  # very far
+]
 
-    reward = reward_values[0]  # BASE_FORWARD_REWARD
+IR_REWARD_MATRIX = [
+    [0.5, 0, 0, 0, 0, 0, 0, 0],
+    [5, -5, -10, -15, 0, -10, -15, -20],
+    [10, 5, -10, -15, 5, 0, -15, -20],
+    [15, 5, 5, -15, 5, 0, -15, -20],
+    [5, 0, -10, -15, -5, -10, -15, -20],
+    [10, 0, 0, -10, 5, -10, -10, -20],
+    [15, 5, 5, -15, 5, 0, -15, -20],
+    [20, 15, 10, 5, 15, 10, 5, -20]
+]
 
-    distance_onehot = next_state[:4]
-    very_close = distance_onehot[0]
+def compute_reward(prev_state, next_state, action_taken, paused):
+    # turn state into index
+    # the state is a list of 7 elements like this [0 0 0 1 0 0 1]
+    # last 3 are ir values left middle right
+    # first 4 are distance values
+    # 0 = very close, 1 = close, 2 = far, 3 = very far
+    # 0 = left, 1 = middle, 2 = right
+    prev_ir = prev_state[4:7]
+    next_ir = next_state[4:7]
+    prev_distance = prev_state[0:4]
+    next_distance = next_state[0:4]
+    # turn ir into index
+    prev_ir_index = prev_ir[0] * 4 + prev_ir[1] * 2 + prev_ir[2]
+    next_ir_index = next_ir[0] * 4 + next_ir[1] * 2 + next_ir[2]
+    # turn distance into index
+    prev_distance_index = prev_distance[0] * 0 + prev_distance[1] * 1 + prev_distance[2] * 2 + prev_distance[3] * 3
+    next_distance_index = next_distance[0] * 0 + next_distance[1] * 1 + next_distance[2] * 2 + next_distance[3] * 3
 
-    prev_ir_left = prev_state[4]
-    prev_ir_middle = prev_state[5]
-    prev_ir_right = prev_state[6]
+    # get the reward from the matrix
+    distance_reward = DIST_REWARD_MATRIX[prev_distance_index][next_distance_index]
+    ir_reward = IR_REWARD_MATRIX[prev_ir_index][next_ir_index]
 
-    curr_ir_left = next_state[4]
-    curr_ir_middle = next_state[5]
-    curr_ir_right = next_state[6]
+    # get the action taken
+    # not implemented
 
-    if very_close == 1:
-        reward += reward_values[1]  # OBSTACLE_VERY_CLOSE_PENALTY
-
-    if curr_ir_left == 0 and curr_ir_middle == 0 and curr_ir_right == 0:
-        reward += reward_values[2]  # ALL_WHITE_REWARD
-
-    if curr_ir_left == 1 or curr_ir_right == 1:
-        reward += reward_values[3]  # SIDE_IR_BLACK_PENALTY
-
-    if curr_ir_middle == 1:
-        reward += reward_values[4]  # MIDDLE_IR_BLACK_PENALTY
-
-    if curr_ir_left == 1 and curr_ir_middle == 1 and curr_ir_right == 1:
-        reward += reward_values[5]  # ALL_IR_BLACK_PENALTY
-
-    if (prev_ir_left == 1 and curr_ir_left == 0) or (prev_ir_right == 1 and curr_ir_right == 0):
-        reward += reward_values[6]  # RECOVERY_SIDE_REWARD
-
-    if prev_ir_middle == 1 and curr_ir_middle == 0:
-        reward += reward_values[7]  # RECOVERY_MIDDLE_REWARD
-
+    # return the reward
     if paused:
-        reward += reward_values[8]  # MANUAL_PAUSE_PENALTY
+        reward = distance_reward + ir_reward - 10
+    else:
+        reward = distance_reward + ir_reward
+
+        # console print for debugging
+    print(
+        f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
 
     return reward
 
@@ -394,7 +396,7 @@ def stop_training():
     return "Training stopped."
 
 def start_training():
-    global ML_RUNNING, ML_PAUSED, agent
+    global ML_RUNNING, ML_PAUSED, agent, total_score
 
     if agent is None:
         print("❌ Error: Agent not loaded. Please load or create the agent first.")
@@ -402,43 +404,65 @@ def start_training():
 
     ML_RUNNING = True
     ML_PAUSED = False
-
+    total_score = 0
+    MAX_STEPS = 10
+    current_steps = 0
+    episode_score = 0
     print("🚀 Training started.")
+    yield "🚀 Training started."
 
     while ML_RUNNING:
-        # === Main training step ===
-        state_old = get_state_from_car(latest_readings)
+        if current_steps > MAX_STEPS and SIMULATION is True:
+            current_steps = 0
+            ML_PAUSED = True
+            MAX_STEPS += 1
+            if MAX_STEPS > 100:
+                # Randomize the next step count max + random
+                MAX_STEPS = min(MAX_STEPS + random.randint(-10, 20), 200)
+
+        state_old = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
         action = agent.get_action(state_old)
         execute_action(action)
+        time.sleep(0.1)
+        read_serial()  # ← this ensures latest_readings updates from the simulator plz work
+        state_new = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
+        current_steps += 1
 
-        time.sleep(0.1)  # allow robot to respond + sensors to update
 
-        state_new = get_state_from_car(latest_readings)
-
-        if ML_PAUSED: # if paused, save the episode and wait for resume
-            reward = compute_reward(state_old, state_new, paused=True)
+        if ML_PAUSED:
+            reward = compute_reward(state_old, state_new, action, paused=True)
             done = True
             agent.train_short_memory(state_old, action, reward, state_new, done)
             agent.remember(state_old, action, reward, state_new, done)
-
+            episode_score += reward
             agent.n_game += 1
+            total_score += episode_score
+            avg_score = total_score / agent.n_game
+
             agent.train_long_memory()
             agent.model.save()
-            print(f"✅ Episode {agent.n_game} completed and saved (paused).")
 
+            message = f"Training paused. Reposition the robot. ✅ Episode {agent.n_game} saved. episode Score: {episode_score}, Avg Score: {avg_score:.2f}"
+            print(message)
+            yield message
+            episode_score = 0
             while ML_PAUSED and ML_RUNNING:
                 time.sleep(0.1)
-            continue  # restart loop
+                if SIMULATION is True:
+                    time.sleep(0.5)
+                    ML_PAUSED = False
+            continue
 
-        reward = compute_reward(state_old, state_new, paused=False)
+        reward = compute_reward(state_old, state_new, action, paused=False)
 
-        done = False  # no auto-ending yet and will never be added
+        episode_score += reward
+        done = False
 
         agent.train_short_memory(state_old, action, reward, state_new, done)
         agent.remember(state_old, action, reward, state_new, done)
 
     print("🛑 Training stopped.")
-    return "🛑 Training stopped."
+    yield "🛑 Training stopped."
 
 def start_training_button():
     global ML_RUNNING
@@ -537,13 +561,10 @@ with gr.Blocks() as app:
 
 
         # === Bindings ===
-
-
-
         load_model_btn.click(fn=load_or_create_agent, outputs=status_text)
         load_model_btn.click(lambda: gr.update(visible=True), outputs=ml_mode_loaded_model)
 
-        start_btn.click(fn=start_training_button, outputs=status_text)
+        start_btn.click(fn=start_training, outputs=status_text)
         pause_btn.click(fn=toggle_pause, outputs=status_text)
         stop_btn.click(fn=stop_training, outputs=status_text)
 
