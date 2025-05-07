@@ -2,15 +2,15 @@ import random
 import time
 
 # Tunable constants for sensor behavior
-DIST_NORMAL_PROB = 0.80  # 80% normal distance
-DIST_CLOSE_PROB = 0.15   # 15% close obstacle
-DIST_NEAR_PROB = 0.05    # 5% very near obstacle
+DIST_NORMAL_PROB = 0.80  # 80% normal distance half if last move was not forward
+DIST_CLOSE_PROB = 0.15   # 15% close obstacle double if last move was not forward
+DIST_NEAR_PROB = 0.05    # 5% very near obstacle double if last move was not forward
 DIST_NORMAL_RANGE = (100, 400)
 DIST_CLOSE_RANGE = (50, 100)
 DIST_NEAR_RANGE = (1, 50)
 DIST_DECREASE_STEP = (10, 20)
 
-IR_APPEAR_CHANCE = 0.20  # 5% chance when all white
+IR_APPEAR_CHANCE = 0.20  # 20% chance when all white when last move was forward, double if last move was not forward
 IR_PATTERN_WEIGHTS = {
     (1, 0, 0): 30,
     (0, 0, 1): 30,
@@ -99,7 +99,10 @@ class SimulatedSerial:
             self.forward_counter = 0
 
         else:
-            if random.random() < IR_APPEAR_CHANCE:
+            chance = IR_APPEAR_CHANCE
+            if command != 'f':
+                chance *= 2
+            if random.random() < chance:
                 patterns = list(IR_PATTERN_WEIGHTS.keys())
                 weights = list(IR_PATTERN_WEIGHTS.values())
                 self.last_ir = list(random.choices(patterns, weights=weights, k=1)[0])
@@ -119,9 +122,9 @@ class SimulatedSerial:
                     self.last_distance = random.randint(*DIST_NEAR_RANGE)
         elif command in ('l', 'r'):
             r = random.random()
-            if r < DIST_NORMAL_PROB:
+            if r < DIST_NORMAL_PROB / 2:
                 self.last_distance = random.randint(*DIST_NORMAL_RANGE)
-            elif r < DIST_NORMAL_PROB + DIST_CLOSE_PROB:
+            elif r < (DIST_NORMAL_PROB / 2 + DIST_CLOSE_PROB * 2) :
                 self.last_distance = random.randint(*DIST_CLOSE_RANGE)
             else:
                 self.last_distance = random.randint(*DIST_NEAR_RANGE)
