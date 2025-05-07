@@ -519,7 +519,7 @@ with gr.Blocks() as app:
             calR = gr.Slider(minimum=-100, maximum=155, value=0, label="Right Calibration")
 
         with gr.Row(visible=False) as normal_mode_controls_Row5:
-            Speed = gr.Slider(minimum=0, maximum=255, value=100, label="Speed")
+            Speed = gr.Slider(minimum=0, maximum=255, value=150, label="Speed")
 
         with gr.Row(visible=False) as avoid_controls:
             scan_slider = gr.Slider(minimum=0, maximum=100, value=scan_trigger_distance, step=1, label="Scan Trigger Distance")
