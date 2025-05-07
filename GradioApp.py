@@ -46,6 +46,7 @@ LR = 0.001
 class CarAgent:
     def __init__(self, model):
         self.n_game = 0
+        self.extra_games = 0
         self.epsilon = 0  # exploration randomness
         self.gamma = 0.9  # discount rate
         self.memory = deque(maxlen=MAX_MEMORY)
@@ -68,7 +69,7 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 30 - self.n_game  # decrease randomness over time
+        self.epsilon = 30 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
@@ -281,18 +282,31 @@ def manual_command(cmd):
 
 def load_or_create_agent():
     global agent
+    load = False
     model = Linear_QNet(8, 256, 3)
     if os.path.exists(model_path):
         model.load_model(file_name='model.pth')
         text = "✅ Loaded existing model."
+        load = True
     else:
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
         model.save(file_name='model.pth')
         text = "🆕 Created and saved new model."
+        load = False
 
     agent = CarAgent(model)
+    if load:
+        agent.extra_games = 30
     return text
 
+def delete_model():
+    global agent
+    if os.path.exists(model_path):
+        os.remove(model_path)
+        agent = None
+        return "✅ Model deleted."
+    else:
+        return "❌ No model found to delete."
 
 def map_distance_onehot(distance):
     if distance < 10:
@@ -366,8 +380,9 @@ def compute_reward(prev_state, next_state, action_taken, paused):
         reward = distance_reward + ir_reward - 10
     else:
         reward = distance_reward + ir_reward
-
-        # console print for debugging
+    # if previous ir were zeros and action was forward
+    if prev_ir.all == 0 and action_taken[0] == 1:
+        reward += 3
     print(
         f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
 
@@ -545,6 +560,7 @@ with gr.Blocks() as app:
         ml_init = gr.Button("Initialize ML Mode ")
         with gr.Row(visible=False) as ml_mode_controls:
             load_model_btn = gr.Button("Load or Create agent")
+            delete_model_btn = gr.Button("Delete Model")
 
 
         with gr.Row(visible=False) as ml_mode_loaded_model:
@@ -563,6 +579,8 @@ with gr.Blocks() as app:
         # === Bindings ===
         load_model_btn.click(fn=load_or_create_agent, outputs=status_text)
         load_model_btn.click(lambda: gr.update(visible=True), outputs=ml_mode_loaded_model)
+        delete_model_btn.click(fn=delete_model, outputs=status_text)
+        delete_model_btn.click(lambda: gr.update(visible=False), outputs=ml_mode_loaded_model)
 
         start_btn.click(fn=start_training, outputs=status_text)
         pause_btn.click(fn=toggle_pause, outputs=status_text)
