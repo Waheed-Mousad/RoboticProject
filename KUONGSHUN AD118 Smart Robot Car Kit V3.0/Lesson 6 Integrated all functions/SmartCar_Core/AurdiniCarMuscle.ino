@@ -17,7 +17,7 @@ const int IN4 = 11;
 int leftOffset = 0;    // default calibration
 int rightOffset = 0;
 char currentCommand = 's'; // 's' = stop
-int carSpeed = 100; // defualt
+int carSpeed = 150; // defualt
 // === Setup ===
 void setup() {
   Serial.begin(9600);
