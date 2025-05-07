@@ -69,7 +69,7 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 30 - self.n_game - self.extra_games # decrease randomness over time
+        self.epsilon = 80 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
@@ -95,7 +95,7 @@ thread = False
 turn_to_left = True
 NORMAL = False
 reading_thread = None
-SIMULATION = True
+SIMULATION = False
 # === Serial Read Thread ===
 def update_reading_thread():
     global latest_readings
@@ -296,7 +296,7 @@ def load_or_create_agent():
 
     agent = CarAgent(model)
     if load:
-        agent.extra_games = 30
+        agent.extra_games = 50
     return text
 
 def delete_model():
@@ -335,12 +335,12 @@ def get_state_from_car(latest_readings):
 DIST_REWARD_MATRIX = [
     [-30, 10, 20, 20],  # very close
     [-10, -10, 5, 5],  # close
-    [0, 0, 0.5, 0.5],  # far
-    [0, 0, 0.5, 0.5],  # very far
+    [-0.5, -0.5, 0.5, 0.5],  # far
+    [-0.5, -0.5, 0.5, 0.5],  # very far
 ]
 
 IR_REWARD_MATRIX = [
-    [0.5, 0, 0, 0, 0, 0, 0, 0],
+    [0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5],
     [5, -5, -10, -15, 0, -10, -15, -20],
     [10, 5, -10, -15, 5, 0, -15, -20],
     [15, 5, 5, -15, 5, 0, -15, -20],
@@ -381,8 +381,8 @@ def compute_reward(prev_state, next_state, action_taken, paused):
     else:
         reward = distance_reward + ir_reward
     # if previous ir were zeros and action was forward
-    if prev_ir.all == 0 and action_taken[0] == 1:
-        reward += 3
+    if np.all(prev_ir == 0) and action_taken[0] == 1 and (prev_distance[3] == 1 or prev_distance[2] == 1):
+        reward += 2
     print(
         f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
 
@@ -416,24 +416,20 @@ def start_training():
     if agent is None:
         print("❌ Error: Agent not loaded. Please load or create the agent first.")
         return "❌ Agent not loaded. Please load or create the agent first."
-
+    state_old = np.zeros(8)
+    state_new = np.zeros(8)
     ML_RUNNING = True
     ML_PAUSED = False
     total_score = 0
-    MAX_STEPS = 10
+    MAX_STEPS = 100
     current_steps = 0
     episode_score = 0
     print("🚀 Training started.")
     yield "🚀 Training started."
-
     while ML_RUNNING:
-        if current_steps > MAX_STEPS and SIMULATION is True:
-            current_steps = 0
+        if ((state_old[5] == 1 or state_old[0] == 1) and action[0] == 1) and SIMULATION is True:
             ML_PAUSED = True
-            MAX_STEPS += 1
-            if MAX_STEPS > 100:
-                # Randomize the next step count max + random
-                MAX_STEPS = min(MAX_STEPS + random.randint(-10, 20), 200)
+            current_steps = -1
 
         state_old = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
         action = agent.get_action(state_old)
@@ -442,7 +438,11 @@ def start_training():
         read_serial()  # ← this ensures latest_readings updates from the simulator plz work
         state_new = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
         current_steps += 1
-
+        print(f"current_steps: {current_steps} - ", end="")
+        # stop the episode if reach the max steps as well
+        if current_steps >= MAX_STEPS and SIMULATION is True and ML_PAUSED is False:
+            ML_PAUSED = True
+            current_steps = 0
 
         if ML_PAUSED:
             reward = compute_reward(state_old, state_new, action, paused=True)
