@@ -154,22 +154,22 @@ def send_speed(speed):
 # === ML mod functions     ===
 def ML_forward():
     send('f')
-    time.sleep(1)
+    time.sleep(0.5)
     send('s')
 
 def ML_backward():
     send('b')
-    time.sleep(1)
+    time.sleep(0.5)
     send('s')
 
 def ML_left():
     send('l')
-    time.sleep(0.5)
+    time.sleep(0.25)
     send('s')
 
 def ML_right():
     send('r')
-    time.sleep(0.5)
+    time.sleep(0.25)
     send('s')
 # === Normal mod functions ===
 def avoid_obstacle():
