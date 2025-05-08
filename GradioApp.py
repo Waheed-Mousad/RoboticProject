@@ -154,22 +154,22 @@ def send_speed(speed):
 # === ML mod functions     ===
 def ML_forward():
     send('f')
-    time.sleep(0.5)
+    time.sleep(0.25)
     send('s')
 
 def ML_backward():
     send('b')
-    time.sleep(0.5)
+    time.sleep(0.25)
     send('s')
 
 def ML_left():
     send('l')
-    time.sleep(0.25)
+    time.sleep(0.125)
     send('s')
 
 def ML_right():
     send('r')
-    time.sleep(0.25)
+    time.sleep(0.125)
     send('s')
 # === Normal mod functions ===
 def avoid_obstacle():
@@ -434,7 +434,7 @@ def start_training():
         state_old = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
         action = agent.get_action(state_old)
         execute_action(action)
-        time.sleep(0.1)
+        time.sleep(0.05)
         read_serial()  # ← this ensures latest_readings updates from the simulator plz work
         state_new = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
         current_steps += 1
