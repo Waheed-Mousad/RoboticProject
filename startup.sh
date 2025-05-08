@@ -16,5 +16,6 @@ git pull origin main        # Replace 'main' with your branch if needed
 
 # === 3. Launch the Gradio app ===
 echo "🚀 Launching Gradio app..."
-source venv/bin/activate  # If using virtualenv
-python3 GradioApp.py
+source /home/w/Documents/GitHub/RoboticProject/venv/bin/activate  # If using virtualenv
+python3 /home/w/Documents/GitHub/RoboticProject/GradioApp.py
+echo "done"
