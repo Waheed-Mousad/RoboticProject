@@ -1,5 +1,15 @@
 # Smart Car Raspberry Pi Control Script with Full Logic + Gradio UI
+"""
+real envoirment test result
+batter than expected
+simulation need to improve
+it get stuck at corners for repeated actions = panalise
+still prefer to repeat useless action = panalise
+sometimes likes to move forward no matter what = reduce reward
+maybe add reading thread for ml, make aurdino stops at sensor change,
+take new step at sensor change?
 
+"""
 import serial
 import threading
 import time
@@ -154,22 +164,22 @@ def send_speed(speed):
 # === ML mod functions     ===
 def ML_forward():
     send('f')
-    time.sleep(0.100)
+    time.sleep(0.500)
     send('s')
 
 def ML_backward():
     send('b')
-    time.sleep(0.100)
+    time.sleep(0.500)
     send('s')
 
 def ML_left():
     send('l')
-    time.sleep(0.05)
+    time.sleep(0.250)
     send('s')
 
 def ML_right():
     send('r')
-    time.sleep(0.05)
+    time.sleep(0.250)
     send('s')
 # === Normal mod functions ===
 def avoid_obstacle():
