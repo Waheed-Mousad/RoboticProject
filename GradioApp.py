@@ -559,6 +559,10 @@ with gr.Blocks() as app:
         gr.Markdown("🚧 *Future machine learning features will go here.*")
         ml_init = gr.Button("Initialize ML Mode ")
         with gr.Row(visible=False) as ml_mode_controls:
+            # test for ML commands buttons (forward, left, right)
+            ml_f = gr.Button("↑ Forward")
+            ml_l = gr.Button("← Left")
+            ml_r = gr.Button("→ Right")
             load_model_btn = gr.Button("Load or Create agent")
             delete_model_btn = gr.Button("Delete Model")
 
@@ -577,6 +581,10 @@ with gr.Blocks() as app:
 
 
         # === Bindings ===
+        ml_f.click(lambda: ML_forward(), outputs=[])
+        ml_l.click(lambda: ML_left(), outputs=[])
+        ml_r.click(lambda: ML_right(), outputs=[])
+
         load_model_btn.click(fn=load_or_create_agent, outputs=status_text)
         load_model_btn.click(lambda: gr.update(visible=True), outputs=ml_mode_loaded_model)
         delete_model_btn.click(fn=delete_model, outputs=status_text)
