@@ -168,7 +168,7 @@ def ML_forward():
     start = time.time()
     while time.time() - start < 2.0:
 
-        if get_state_from_car() != prev_readings:
+        if not np.array_equal(get_state_from_car(), prev_readings):
             break
         time.sleep(0.005)
     send('s')
@@ -180,7 +180,7 @@ def ML_backward():
     start = time.time()
     while time.time() - start < 2.0:
 
-        if get_state_from_car() != prev_readings:
+        if not np.array_equal(get_state_from_car(), prev_readings):
             break
         time.sleep(0.005)
     send('s')
@@ -191,7 +191,7 @@ def ML_left():
     start = time.time()
     while time.time() - start < 0.5:
 
-        if get_state_from_car() != prev_readings:
+        if not np.array_equal(get_state_from_car(), prev_readings):
             break
         time.sleep(0.005)
     send('s')
@@ -202,7 +202,7 @@ def ML_right():
     start = time.time()
     while time.time() - start < 0.5:
 
-        if get_state_from_car() != prev_readings:
+        if not np.array_equal(get_state_from_car(), prev_readings):
             break
         time.sleep(0.005)
     send('s')
