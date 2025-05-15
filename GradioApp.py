@@ -174,7 +174,7 @@ def ML_forward():
     prev_readings = get_state_from_car()
     send('f')
     start = time.time()
-    while time.time() - start < 0.20:
+    while time.time() - start < 2.0:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
@@ -197,7 +197,7 @@ def ML_left():
     prev_readings = get_state_from_car()
     send('l')
     start = time.time()
-    while time.time() - start < 0.05:
+    while time.time() - start < 0.5:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
@@ -208,7 +208,7 @@ def ML_right():
     prev_readings = get_state_from_car()
     send('r')
     start = time.time()
-    while time.time() - start < 0.05:
+    while time.time() - start < 0.5:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
