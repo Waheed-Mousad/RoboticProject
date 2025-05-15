@@ -59,7 +59,7 @@ model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 action_history = deque(maxlen=10)  # Keep last 10 actions
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
-LR = 0.001
+LR = 0.01
 
 class CarAgent:
     def __init__(self, model):
@@ -87,7 +87,7 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 80 - self.n_game - self.extra_games # decrease randomness over time
+        self.epsilon = 30 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
@@ -208,6 +208,7 @@ def ML_right():
     prev_readings = get_state_from_car()
     send('r')
     start = time.time()
+    time.sleep(0.5)
     while time.time() - start < 0.5:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
@@ -420,7 +421,7 @@ def compute_reward(prev_state, next_state, action_taken, paused):
 
     # return the reward
     if paused:
-        reward = distance_reward + ir_reward - 10
+        reward = distance_reward + ir_reward - 50
     else:
         reward = distance_reward + ir_reward
     # if previous ir were zeros and action was forward
@@ -433,13 +434,13 @@ def compute_reward(prev_state, next_state, action_taken, paused):
     recent = list(action_history)
 
     if len(recent) >= 4 and all(a == "l" for a in recent[-4:]):
-        reward -= (len([a for a in recent[-10:] if a == "l"]) - 3)  # increasing penalty
+        reward -= (len([a for a in recent[-10:] if a == "l"]) - 10)  # increasing penalty
 
     if len(recent) >= 4 and all(a == "r" for a in recent[-4:]):
-        reward -= (len([a for a in recent[-10:] if a == "r"]) - 3)
+        reward -= (len([a for a in recent[-10:] if a == "r"]) - 10)
 
     if len(recent) >= 6 and all(a in ("l", "r") for a in recent) and "f" not in recent:
-        reward -= 5  # strong penalty if forward is missing completely
+        reward -= 10  # strong penalty if forward is missing completely
 
     return reward
 
