@@ -59,7 +59,7 @@ model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 action_history = deque(maxlen=10)  # Keep last 10 actions
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
-LR = 0.01
+LR = 0.1
 
 class CarAgent:
     def __init__(self, model):
