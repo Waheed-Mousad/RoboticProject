@@ -163,23 +163,48 @@ def send_speed(speed):
     send(f"S{speed}\n")
 # === ML mod functions     ===
 def ML_forward():
+    prev_readings = latest_readings.copy()
     send('f')
-    time.sleep(0.500)
+    start = time.time()
+    while time.time() - start < 2.0:
+        read_serial()
+        if latest_readings != prev_readings:
+            break
+        time.sleep(0.005)
     send('s')
 
+
 def ML_backward():
+    prev_readings = latest_readings.copy()
     send('b')
-    time.sleep(0.500)
+    start = time.time()
+    while time.time() - start < 2.0:
+        read_serial()
+        if latest_readings != prev_readings:
+            break
+        time.sleep(0.005)
     send('s')
 
 def ML_left():
+    prev_readings = latest_readings.copy()
     send('l')
-    time.sleep(0.250)
+    start = time.time()
+    while time.time() - start < 0.5:
+        read_serial()
+        if latest_readings != prev_readings:
+            break
+        time.sleep(0.005)
     send('s')
 
 def ML_right():
+    prev_readings = latest_readings.copy()
     send('r')
-    time.sleep(0.250)
+    start = time.time()
+    while time.time() - start < 0.5:
+        read_serial()
+        if latest_readings != prev_readings:
+            break
+        time.sleep(0.005)
     send('s')
 # === Normal mod functions ===
 def avoid_obstacle():
@@ -489,6 +514,22 @@ def start_training():
     print("🛑 Training stopped.")
     yield "🛑 Training stopped."
 
+def set_extra_games(n):
+    if agent:
+        agent.extra_games = int(n)
+        return f"✅ extra_games set to {n}"
+    else:
+        return "❌ Agent not loaded."
+
+def safeguard_save():
+    if agent:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"safeguard_{timestamp}.pth"
+        full_path = os.path.join(os.path.dirname(model_path), filename)
+        agent.model.save(file_name=full_path)
+        return f"✅ Model saved as {filename}"
+    return "❌ Agent not loaded."
+
 def start_training_button():
     global ML_RUNNING
 
@@ -581,6 +622,9 @@ with gr.Blocks() as app:
             start_btn = gr.Button("Start Training")
             pause_btn = gr.Button("Pause / Resume Episode")
             stop_btn = gr.Button("Stop Training")
+            extra_games_input = gr.Number(label="Extra Games", value=0)
+            set_extra_btn = gr.Button("Set Extra Games")
+            safeguard_btn = gr.Button("📦 Safeguard Save")
 
         status_text = gr.Textbox(label="Training Status", value="Idle", interactive=False)
 
@@ -603,6 +647,8 @@ with gr.Blocks() as app:
         start_btn.click(fn=start_training, outputs=status_text)
         pause_btn.click(fn=toggle_pause, outputs=status_text)
         stop_btn.click(fn=stop_training, outputs=status_text)
+        set_extra_btn.click(set_extra_games, inputs=extra_games_input, outputs=status_text)
+        safeguard_btn.click(safeguard_save, outputs=status_text)
 
     # === Gradio UI Update ===
     normal_init.click(lambda: gr.update(visible=True), outputs=normal_mode_controls_Row1)
