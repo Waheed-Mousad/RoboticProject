@@ -38,10 +38,12 @@ for p in ports:
         break
 
 BAUD_RATE = 9600
-
+SIMULATION = False
 if SERIAL_PORT is None:
     print("⚠ Arduino not found. Switching to simulated serial.")
     ser = SimulatedSerial()
+    SIMULATION = True
+    print("simulation is:", SIMULATION)
 else:
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
     time.sleep(2)
@@ -111,7 +113,7 @@ thread = False
 turn_to_left = True
 NORMAL = False
 reading_thread = None
-SIMULATION = False
+
 # === Serial Read Thread ===
 def update_reading_thread():
     global latest_readings
@@ -172,7 +174,7 @@ def ML_forward():
     prev_readings = get_state_from_car()
     send('f')
     start = time.time()
-    while time.time() - start < 2.0:
+    while time.time() - start < 0.20:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
@@ -195,7 +197,7 @@ def ML_left():
     prev_readings = get_state_from_car()
     send('l')
     start = time.time()
-    while time.time() - start < 0.5:
+    while time.time() - start < 0.05:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
@@ -206,7 +208,7 @@ def ML_right():
     prev_readings = get_state_from_car()
     send('r')
     start = time.time()
-    while time.time() - start < 0.5:
+    while time.time() - start < 0.05:
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break

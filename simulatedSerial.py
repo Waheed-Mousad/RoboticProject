@@ -28,6 +28,11 @@ class SimulatedSerial:
         self.last_distance = 100
         self.last_command = None
         self.forward_counter = 0
+        self.event_type = None
+        self.event_entry = None
+        self.event_progress = 0
+        self.event_death_counter = 0
+        self.event_goal = 0
 
     def write(self, data):
         command = data.decode('utf-8').strip()
@@ -51,6 +56,10 @@ class SimulatedSerial:
         pass
 
     def _update_ir_state(self, command):
+        if self.event_type:
+            self._process_event(command)
+            return
+
         if any(self.last_ir):
             if self.last_ir == [1, 0, 1]:
                 if command == 'f':
@@ -102,10 +111,85 @@ class SimulatedSerial:
             chance = IR_APPEAR_CHANCE
             if command != 'f':
                 chance *= 2
-            if random.random() < chance:
+                # === Chance to trigger an event ===
+            if random.random() < 0.10:
+                self.event_type = random.choice(["corridor", "uturn"])
+                self.event_entry = "left" if random.random() < 0.5 else "right"
+                self.event_progress = 0
+                self.event_death_counter = 0
+                self.event_goal = random.randint(5, 10)
+                self.last_ir = [1, 0, 0] if self.event_entry == "left" else [0, 0, 1]
+            else:
                 patterns = list(IR_PATTERN_WEIGHTS.keys())
                 weights = list(IR_PATTERN_WEIGHTS.values())
                 self.last_ir = list(random.choices(patterns, weights=weights, k=1)[0])
+
+    def _process_event(self, command):
+        if self.event_death_counter >= 2:
+            self.last_ir = [0, 0, 0]
+            self.event_type = None
+            return
+
+        if self.event_type == "corridor":
+            # Check for death condition
+            if self.last_ir == [1, 0, 0] and command == 'l':
+                self.event_death_counter += 1
+                self.last_ir = [1, 1, 1]
+                return
+
+            if command == 'r' and self.event_entry == "left":
+                self.last_ir = [0, 0, 1]
+            elif command == 'l' and self.event_entry == "right":
+                self.last_ir = [1, 0, 0]
+            elif command == 'f':
+                self.event_progress += 1
+                if random.random() < 0.5:
+                    if self.event_entry == "left":
+                        self.last_ir = [0, 1, 0]
+                    else:
+                        self.last_ir = [0, 1, 0]
+                else:
+                    self.last_ir = [0, 0, 0]
+
+            if self.event_progress >= self.event_goal:
+                self.event_type = None
+                self.last_ir = [0, 0, 0]
+            return
+
+        if self.event_type == "uturn":
+            if self.event_entry == "left" and command == 'l':
+                self.event_death_counter += 1
+            elif self.event_entry == "right" and command == 'r':
+                self.event_death_counter += 1
+            elif command == 'f':
+                self.event_death_counter += 1
+            else:
+                self.event_death_counter = 0
+
+            if self.event_death_counter >= 2 and command != 'f':
+                self.last_ir = [1, 1, 1]
+                self.event_type = None
+                return
+
+            if self.event_death_counter >= 3 and command == 'f':
+                self.last_ir = [1, 1, 1]
+                self.event_type = None
+                return
+
+            if self.event_entry == "left" and command == 'r':
+                self.event_progress += 0.5
+            elif self.event_entry == "right" and command == 'l':
+                self.event_progress += 0.5
+            elif command == 'f':
+                self.event_progress += 0.5
+
+            if self.event_progress >= self.event_goal:
+                self.event_type = None
+                self.last_ir = [0, 0, 0]
+            else:
+                if command == 'f':
+                    self.last_ir = [0, 1, 0]
+
 
     def _update_distance(self, command):
         if command == 'f':
