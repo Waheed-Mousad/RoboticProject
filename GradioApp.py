@@ -56,10 +56,10 @@ model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 #TODO Make it modular Trust me bro
 
 
-action_history = deque(maxlen=10)  # Keep last 10 actions
+action_history = deque(maxlen=3)  # Keep last 3 actions
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
-LR = 0.1
+LR = 0.001
 
 class CarAgent:
     def __init__(self, model):
@@ -87,7 +87,7 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 30 - self.n_game - self.extra_games # decrease randomness over time
+        self.epsilon = 80 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
@@ -327,7 +327,7 @@ def manual_command(cmd):
 def load_or_create_agent():
     global agent
     load = False
-    model = Linear_QNet(8, 256, 3)
+    model = Linear_QNet(14, 256, 3)
     if os.path.exists(model_path):
         model.load_model(file_name='model.pth')
         text = "✅ Loaded existing model."
@@ -433,16 +433,31 @@ def compute_reward(prev_state, next_state, action_taken, paused):
     # === Repetition penalty ===
     recent = list(action_history)
 
-    if len(recent) >= 4 and all(a == "l" for a in recent[-4:]):
+    if len(recent) >= 3 and all(a == "l" for a in recent[-4:]):
         reward -= (len([a for a in recent[-10:] if a == "l"]) - 10)  # increasing penalty
 
-    if len(recent) >= 4 and all(a == "r" for a in recent[-4:]):
+    if len(recent) >= 3 and all(a == "r" for a in recent[-4:]):
         reward -= (len([a for a in recent[-10:] if a == "r"]) - 10)
 
-    if len(recent) >= 6 and all(a in ("l", "r") for a in recent) and "f" not in recent:
+    if len(recent) >= 3 and all(a in ("l", "r") for a in recent) and "f" not in recent:
         reward -= 10  # strong penalty if forward is missing completely
 
     return reward
+
+ACTION_ENCODING = {
+    "f": [1, 0, 0],
+    "l": [0, 1, 0],
+    "r": [0, 0, 1],
+}
+
+def extend_state_with_history(state, history, paused_flag):
+    recent = list(history)[-2:]
+    while len(recent) < 2:
+        recent.insert(0, None)
+
+    encoded = [ACTION_ENCODING[a] if a else [0, 0, 0] for a in recent]
+    flat = [x for trio in encoded for x in trio]
+    return np.append(state, flat + [int(paused_flag)])
 
 def execute_action(action):
     global action_history
@@ -477,8 +492,8 @@ def start_training():
     if agent is None:
         print("❌ Error: Agent not loaded. Please load or create the agent first.")
         return "❌ Agent not loaded. Please load or create the agent first."
-    state_old = np.zeros(8)
-    state_new = np.zeros(8)
+    state_old = np.zeros(14)
+    state_new = np.zeros(14)
     ML_RUNNING = True
     ML_PAUSED = False
     total_score = 0
@@ -492,12 +507,12 @@ def start_training():
             ML_PAUSED = True
             current_steps = -1
 
-        state_old = np.append(get_state_from_car(), int(ML_PAUSED))
+        state_old = extend_state_with_history(get_state_from_car(), action_history, ML_PAUSED)
         action = agent.get_action(state_old)
         execute_action(action)
         time.sleep(0.01)
         read_serial()  # ← this ensures latest_readings updates from the simulator plz work
-        state_new = np.append(get_state_from_car(), int(ML_PAUSED))
+        state_new = extend_state_with_history(get_state_from_car(), action_history, ML_PAUSED)
         current_steps += 1
         print(f"current_steps: {current_steps} - ", end="")
         # stop the episode if reach the max steps as well
