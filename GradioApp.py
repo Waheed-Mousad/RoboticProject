@@ -18,6 +18,10 @@ import serial.tools.list_ports
 import os
 from model import QTrainer, Linear_QNet
 import model
+from collections import deque
+
+
+
 print(model.__file__)
 
 import numpy as np
@@ -49,6 +53,8 @@ model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 # Please spare my life for spaghetti I will make is moduler later trust me bro
 #TODO Make it modular Trust me bro
 
+
+action_history = deque(maxlen=10)  # Keep last 10 actions
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
 LR = 0.001
@@ -376,10 +382,10 @@ DIST_REWARD_MATRIX = [
 
 IR_REWARD_MATRIX = [
     [0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5],
-    [5, -5, -10, -15, 0, -10, -15, -20],
+    [5, -5, -10, -15, -5, -10, -15, -20],
     [10, 5, -10, -15, 5, 0, -15, -20],
     [15, 5, 5, -15, 5, 0, -15, -20],
-    [5, 0, -10, -15, -5, -10, -15, -20],
+    [5, -5, -10, -15, -5, -10, -15, -20],
     [10, 0, -5, -10, 5, 0, -10, -20],
     [15, 5, 5, -15, 5, 0, -15, -20],
     [20, 15, 10, 5, 15, 10, 5, -20]
@@ -421,15 +427,32 @@ def compute_reward(prev_state, next_state, action_taken, paused):
     print(
         f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
 
+    # === Repetition penalty ===
+    recent = list(action_history)
+
+    if len(recent) >= 4 and all(a == "l" for a in recent[-4:]):
+        reward -= (len([a for a in recent[-10:] if a == "l"]) - 3)  # increasing penalty
+
+    if len(recent) >= 4 and all(a == "r" for a in recent[-4:]):
+        reward -= (len([a for a in recent[-10:] if a == "r"]) - 3)
+
+    if len(recent) >= 6 and all(a in ("l", "r") for a in recent) and "f" not in recent:
+        reward -= 5  # strong penalty if forward is missing completely
+
     return reward
 
 def execute_action(action):
+    global action_history
     if action[0] == 1:
+        action_history.append("f")
         ML_forward()
     elif action[1] == 1:
+        action_history.append("l")
         ML_left()
     elif action[2] == 1:
+        action_history.append("r")
         ML_right()
+
 
 def toggle_pause():
     global ML_PAUSED
