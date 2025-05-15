@@ -163,46 +163,46 @@ def send_speed(speed):
     send(f"S{speed}\n")
 # === ML mod functions     ===
 def ML_forward():
-    prev_readings = latest_readings.copy()
+    prev_readings = get_state_from_car()
     send('f')
     start = time.time()
     while time.time() - start < 2.0:
-        read_serial()
-        if latest_readings != prev_readings:
+
+        if get_state_from_car() != prev_readings:
             break
         time.sleep(0.005)
     send('s')
 
 
 def ML_backward():
-    prev_readings = latest_readings.copy()
+    prev_readings = get_state_from_car()
     send('b')
     start = time.time()
     while time.time() - start < 2.0:
-        read_serial()
-        if latest_readings != prev_readings:
+
+        if get_state_from_car() != prev_readings:
             break
         time.sleep(0.005)
     send('s')
 
 def ML_left():
-    prev_readings = latest_readings.copy()
+    prev_readings = get_state_from_car()
     send('l')
     start = time.time()
     while time.time() - start < 0.5:
-        read_serial()
-        if latest_readings != prev_readings:
+
+        if get_state_from_car() != prev_readings:
             break
         time.sleep(0.005)
     send('s')
 
 def ML_right():
-    prev_readings = latest_readings.copy()
+    prev_readings = get_state_from_car()
     send('r')
     start = time.time()
     while time.time() - start < 0.5:
-        read_serial()
-        if latest_readings != prev_readings:
+
+        if get_state_from_car() != prev_readings:
             break
         time.sleep(0.005)
     send('s')
@@ -346,7 +346,7 @@ def delete_model():
 def map_distance_onehot(distance):
     if distance < 10:
         category = 0  # very close
-    elif distance < 30:
+    elif distance < 20:
         category = 1  # close
     elif distance < 100:
         category = 2  # far
@@ -357,7 +357,7 @@ def map_distance_onehot(distance):
     one_hot[category] = 1
     return one_hot
 
-def get_state_from_car(latest_readings):
+def get_state_from_car():
     read_serial() # read the latest data
     distance_onehot = map_distance_onehot(latest_readings["distance"])
     ir_left = latest_readings["ir"][0]
@@ -466,12 +466,12 @@ def start_training():
             ML_PAUSED = True
             current_steps = -1
 
-        state_old = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
+        state_old = np.append(get_state_from_car(), int(ML_PAUSED))
         action = agent.get_action(state_old)
         execute_action(action)
         time.sleep(0.01)
         read_serial()  # ← this ensures latest_readings updates from the simulator plz work
-        state_new = np.append(get_state_from_car(latest_readings), int(ML_PAUSED))
+        state_new = np.append(get_state_from_car(), int(ML_PAUSED))
         current_steps += 1
         print(f"current_steps: {current_steps} - ", end="")
         # stop the episode if reach the max steps as well
