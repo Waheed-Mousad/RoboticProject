@@ -331,7 +331,7 @@ def load_or_create_agent():
 
     agent = CarAgent(model)
     if load:
-        agent.extra_games = 70
+        agent.extra_games = 0
     return text
 
 def delete_model():
