@@ -197,7 +197,7 @@ def ML_backward():
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
-        time.sleep(0.005)
+        time.sleep(0.001)
     send('s')
 
 def ML_left():
@@ -208,7 +208,7 @@ def ML_left():
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
-        time.sleep(0.005)
+        time.sleep(0.001)
     send('s')
 
 def ML_right():
@@ -220,7 +220,7 @@ def ML_right():
 
         if not np.array_equal(get_state_from_car(), prev_readings):
             break
-        time.sleep(0.005)
+        time.sleep(0.001)
     send('s')
 # === Normal mod functions ===
 def avoid_obstacle():
@@ -512,7 +512,14 @@ def start_training():
 
     with open(LOG_PATH, mode='w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["timestamp", "episode", "episode_score", "avg_score"])
+        writer.writerow([
+            "timestamp",
+            "episode",
+            "episode_score",
+            "avg_score",
+            "steps_this_episode",
+            "score_per_step"
+        ])
     if agent is None:
         print("❌ Error: Agent not loaded. Please load or create the agent first.")
         return "❌ Agent not loaded. Please load or create the agent first."
@@ -523,6 +530,7 @@ def start_training():
     total_score = 0
     MAX_STEPS = 100
     current_steps = 0
+    current_steps_2 = 0
     episode_score = 0
     print("🚀 Training started.")
     yield "🚀 Training started."
@@ -543,6 +551,7 @@ def start_training():
         # stop the episode if reach the max steps as well
         if current_steps >= MAX_STEPS and SIMULATION is True and ML_PAUSED is False:
             ML_PAUSED = True
+            current_steps_2 = current_steps
             current_steps = 0
 
         if ML_PAUSED:
@@ -564,14 +573,24 @@ def start_training():
             agent.train_long_memory()
             agent.model.save()
 
-            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+
             message = f"Training paused. Reposition the robot. ✅ Episode {agent.n_game} saved. episode Score: {episode_score}, Avg Score: {avg_score:.2f}"
             print(message)
 
-            # Log to CSV
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            steps_this_episode = current_steps_2 if current_steps_2 > 0 else 1  # prevent div by zero
+            score_per_step = episode_score / steps_this_episode
+
             with open(LOG_PATH, mode='a', newline='') as file:
                 writer = csv.writer(file)
-                writer.writerow([timestamp, agent.n_game, episode_score, avg_score])
+                writer.writerow([
+                    timestamp,
+                    agent.n_game,
+                    episode_score,
+                    avg_score,
+                    steps_this_episode,
+                    score_per_step
+                ])
 
             yield message
 
