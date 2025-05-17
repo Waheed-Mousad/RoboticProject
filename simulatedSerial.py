@@ -27,6 +27,7 @@ class SimulatedSerial:
         self.last_ir = [0, 0, 0]
         self.last_distance = 100
         self.last_command = None
+        self.last_command_last = None
         self.forward_counter = 0
         self.event_type = None
         self.event_entry = None
@@ -55,6 +56,17 @@ class SimulatedSerial:
     def reset_input_buffer(self):
         pass
 
+    def reset(self):
+        self.last_ir = [0, 0, 0]
+        self.last_distance = 100
+        self.last_command = None
+        self.last_command_last = None
+        self.forward_counter = 0
+        self.event_type = None
+        self.event_entry = None
+        self.event_progress = 0
+        self.event_death_counter = 0
+        self.event_goal = 0
     def _update_ir_state(self, command):
         if self.event_type:
             self._process_event(command)
@@ -118,6 +130,7 @@ class SimulatedSerial:
                 self.event_progress = 0
                 self.event_death_counter = 0
                 self.event_goal = random.randint(5, 10)
+                self.last_command_last = command
                 self.last_ir = [1, 0, 0] if self.event_entry == "left" else [0, 0, 1]
             else:
                 patterns = list(IR_PATTERN_WEIGHTS.keys())
@@ -125,71 +138,385 @@ class SimulatedSerial:
                 self.last_ir = list(random.choices(patterns, weights=weights, k=1)[0])
 
     def _process_event(self, command):
-        if self.event_death_counter >= 2:
-            self.last_ir = [0, 0, 0]
+        print(f"Processing event: {self.event_type}, entry: {self.event_entry}, command: {command}, progress: {self.event_progress}, death counter: {self.event_death_counter}")
+        if self.event_death_counter >= 3:
+            print(f"Reached death condition :( death: {self.event_death_counter}")
+            self.last_ir = [1, 1, 1]
             self.event_type = None
             return
 
         if self.event_type == "corridor":
-            # Check for death condition
-            if self.last_ir == [1, 0, 0] and command == 'l':
-                self.event_death_counter += 1
-                self.last_ir = [1, 1, 1]
-                return
+            ir = self.last_ir
 
-            if command == 'r' and self.event_entry == "left":
-                self.last_ir = [0, 0, 1]
-            elif command == 'l' and self.event_entry == "right":
-                self.last_ir = [1, 0, 0]
-            elif command == 'f':
+            # === Progress condition: safe forward movement ===
+            if ir in ([0, 0, 1], [1, 0, 0], [1, 0, 1]) and command == 'f':
                 self.event_progress += 1
-                if random.random() < 0.5:
-                    if self.event_entry == "left":
-                        self.last_ir = [0, 1, 0]
-                    else:
-                        self.last_ir = [0, 1, 0]
+                # IR may or may not improve after forward
+                ran = random.random()
+                if ran < 0.33:
+                    self.last_ir = [1, 0, 0]
+                elif ran < 0.66:
+                    self.last_ir = [0, 0, 1]
                 else:
-                    self.last_ir = [0, 0, 0]
-
-            if self.event_progress >= self.event_goal:
-                self.event_type = None
-                self.last_ir = [0, 0, 0]
-            return
-
-        if self.event_type == "uturn":
-            if self.event_entry == "left" and command == 'l':
-                self.event_death_counter += 1
-            elif self.event_entry == "right" and command == 'r':
-                self.event_death_counter += 1
-            elif command == 'f':
-                self.event_death_counter += 1
-            else:
+                    self.last_ir = [1, 0, 1]
                 self.event_death_counter = 0
 
-            if self.event_death_counter >= 2 and command != 'f':
+
+            # === Recovery turns (fixing left/right walls) ===
+            if ir == [1, 1, 0] and command == 'r':
+                ran = random.random()
+                if ran < 0.4:
+                    self.last_ir = [1, 0, 1]
+                elif ran < 0.8:
+                    self.last_ir = [1, 0, 0]
+                else:
+                    self.last_ir = [0, 0, 1]
+                self.event_death_counter = max(0, self.event_death_counter - 1)
+
+            if ir == [0, 1, 1] and command == 'l':
+                ran = random.random()
+                if ran < 0.4:
+                    self.last_ir = [1, 0, 1]
+                elif ran < 0.8:
+                    self.last_ir = [0, 0, 1]
+                else:
+                    self.last_ir = [1, 0, 0]
+                self.event_death_counter = max(0, self.event_death_counter - 1)
+
+
+            # === Dangerous wall-hugging turns ===
+            if ir == [1, 0, 0] and command == 'l':
+                ran = random.random()
+                if ran < 0.8:
+                    self.last_ir = [1, 1, 0]
+                else:
+                    self.last_ir = [0, 1, 0]
+                self.event_death_counter += 1
+
+            if ir == [0, 0, 1] and command == 'r':
+                ran = random.random()
+                if ran < 0.8:
+                    self.last_ir = [0, 1, 1]
+                else:
+                    self.last_ir = [0, 1, 0]
+                self.event_death_counter += 1
+
+            if ir == [1, 0, 1] and command == 'l':
+                self.last_ir = [1, 1, 0]  # left sensor worsens
+                self.event_death_counter += 1
+
+            elif ir == [1, 0, 1] and command == 'r':
+                self.last_ir = [0, 1, 1]  # right sensor worsens
+                self.event_death_counter += 1
+
+            if ir == [1, 1, 0] and command in ('l', 'f'):
+                self.last_ir = [1, 1, 1]
+                self.event_death_counter += 1
+
+            if ir == [0, 1, 1] and command in ('r', 'f'):
+                self.last_ir = [1, 1, 1]
+                self.event_death_counter += 1
+
+
+            # === dangrous corrections ===
+            if ir == [0, 1, 0] and command == 'r':
+                if self.last_command_last == 'l':
+                    ran = random.random()
+                    if ran < 0.33:
+                        self.last_ir = [0, 0, 1]
+                    else:
+                        self.last_ir = [0, 1, 1]
+                else:
+                    self.last_ir = [1, 1, 1]
+                    self.event_death_counter += 1
+
+            if ir == [0, 1, 0] and command == 'l':
+                if self.last_command_last == 'r':
+                    ran = random.random()
+                    if ran < 0.33:
+                        self.last_ir = [1, 0, 0]
+                    else:
+                        self.last_ir = [1, 1, 0]
+                else:
+                    self.last_ir = [1, 1, 1]
+                    self.event_death_counter += 1
+
+            if ir == [0, 1, 0] and command == 'f':
+                if self.last_command_last == 'r':
+                    ran = random.random()
+                    if ran < 0.33:
+                        self.last_ir = [1, 1, 1]
+                    else:
+                        self.last_ir = [0, 1, 1]
+                    self.event_death_counter += 1
+                elif self.last_command_last == 'l':
+                    ran = random.random()
+                    if ran < 0.33:
+                        self.last_ir = [1, 1, 1]
+                    else:
+                        self.last_ir = [1, 1, 0]
+                    self.event_death_counter += 1
+                else:
+                    self.last_ir = [1, 1, 1]
+                    self.event_death_counter += 1
+
+            if ir == [1, 1, 1]:
+                if self.last_command_last == 'l':
+                    if command == 'r':
+                        self.last_ir = [1, 1, 0]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+                    else:
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+
+                elif self.last_command_last == 'r':
+                    if command == 'l':
+                        self.last_ir = [0, 1, 1]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+                    else:
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+
+                else:
+                    if command == 'r':
+                        self.last_ir = [1, 1, 0]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+                    elif command == 'l':
+                        self.last_ir = [0, 1, 1]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+                    else:
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+
+            if ir == [0, 0, 0]:
+                if self.last_command == 'f':
+                    ran = random.random()
+                    if ran < 0.5:
+                        self.last_ir = [0, 0, 0]
+                    elif ran < 0.75:
+                        self.last_ir = [1, 0, 0]
+                    else:
+                        self.last_ir = [0, 0, 1]
+                    self.event_progress += 1
+                if self.last_command == 'r':
+                    self.last_ir = [0, 0, 1]
+                if self.last_command == 'l':
+                    self.last_ir = [1, 0, 0]
+
+            # === Death threshold reached ===
+            if self.event_death_counter >= 3:
+                print(f"Reached death condition :( death: {self.event_death_counter}")
                 self.last_ir = [1, 1, 1]
                 self.event_type = None
-                return
 
-            if self.event_death_counter >= 3 and command == 'f':
-                self.last_ir = [1, 1, 1]
-                self.event_type = None
-                return
-
-            if self.event_entry == "left" and command == 'r':
-                self.event_progress += 0.5
-            elif self.event_entry == "right" and command == 'l':
-                self.event_progress += 0.5
-            elif command == 'f':
-                self.event_progress += 0.5
-
+            # === Successful completion ===
             if self.event_progress >= self.event_goal:
+                print(f"event goal reached! {self.event_progress} > {self.event_goal}")
+                self.last_ir = [0, 0, 0]
+                self.event_type = None
+
+            self.last_command_last = command
+            return
+
+
+        if self.event_type == "uturn":
+            ir = self.last_ir
+            cmd = command
+            entry = self.event_entry
+
+            # === Entry: LEFT ===
+            if entry == "left":
+                if ir == [1, 0, 0]:
+                    if cmd in ('f', 'l'):
+                        self.last_ir = [1, 1, 0]
+                        self.event_death_counter += 1
+                    elif cmd == 'r':
+                        self.last_ir = [0, 0, 1]
+                        self.event_death_counter = 0
+                        self.event_progress += 1
+
+                elif ir == [1, 1, 0]:
+                    if cmd in ('f', 'l'):
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+                    else:
+                        self.last_ir = [0, 0, 1]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+
+                elif ir == [1, 1, 1]:
+                    if self.last_command_last == 'l':
+                        if cmd in ('f', 'l'):
+                            self.last_ir = [1, 1, 1]
+                            self.event_death_counter += 1
+                        else:
+                            self.last_ir = [1, 1, 0]
+                            self.event_death_counter = max(0, self.event_death_counter - 1)
+                    else:
+                        if cmd in ('f', 'r'):
+                            self.last_ir = [1, 1, 1]
+                            self.event_death_counter += 1
+                        else:
+                            self.last_ir = [0, 1, 1]
+                            self.event_death_counter = max(0, self.event_death_counter - 1)
+
+                elif ir == [0, 0, 1]:
+                    if cmd == 'r':
+                        self.last_ir = [0, 1, 1]
+                        self.event_death_counter += 1
+                    elif cmd == 'l':
+                        self.last_ir = [1, 0, 0]
+                        self.event_progress = max(0, self.event_progress - 1)
+                    elif cmd == 'f':
+                        self.last_ir = [1, 0, 0]
+                        self.event_progress += 1
+                        self.event_death_counter = 0
+
+                elif ir == [0, 1, 1]:
+                    if cmd == 'f':
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+                    elif cmd == 'l':
+                        self.last_ir = [0, 0, 1]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+                    elif cmd == 'r':
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+
+                elif ir == [0, 0, 0]:
+                    if cmd == 'f':
+                        self.last_ir = [0, 1, 0]
+                    elif cmd == 'l':
+                        self.last_ir = [1, 0, 0]
+                    elif cmd == 'r':
+                        self.last_ir = [0, 0, 1]
+
+                elif ir == [0, 1, 0]:
+                    if cmd == 'f':
+                        self.last_ir = [1, 1, 0]
+                        self.event_death_counter += 1
+                    elif cmd == 'l':
+                        self.last_ir = [1, 1, 0]
+                        self.event_death_counter += 1
+                    elif cmd == 'r':
+                        self.last_ir = [0, 0, 1]
+                        self.event_death_counter = 0
+
+                elif ir == [1,0,1]:
+                    if cmd == 'f':
+                        ran = random.random()
+                        if ran < 0.33:
+                            self.last_ir = [1, 0, 1]
+                            self.event_progress += 1
+                        elif ran < 0.66:
+                            self.last_ir = [0, 0, 1]
+                            self.event_progress += 1
+                        else:
+                            self.last_ir = [1, 0, 0]
+                            self.event_progress += 1
+
+
+
+            # === Entry: RIGHT ===
+            elif entry == "right":
+                if ir == [0, 0, 1]:
+                    if cmd in ('f', 'r'):
+                        self.last_ir = [0, 1, 1]
+                        self.event_death_counter += 1
+                    elif cmd == 'l':
+                        self.last_ir = [1, 0, 0]
+                        self.event_death_counter = 0
+                        self.event_progress += 1
+
+                elif ir == [0, 1, 1]:
+                    if cmd in ('f', 'r'):
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+                    else:
+                        self.last_ir = [0, 0, 1]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+
+                elif ir == [1, 1, 1]:
+                    if self.last_command_last == 'r':
+                        if cmd in ('f', 'r'):
+                            self.last_ir = [1, 1, 1]
+                            self.event_death_counter += 1
+                        else:
+                            self.last_ir = [0, 1, 1]
+                            self.event_death_counter = max(0, self.event_death_counter - 1)
+                    else:
+                        if cmd in ('f', 'l'):
+                            self.last_ir = [1, 1, 1]
+                            self.event_death_counter += 1
+                        else:
+                            self.last_ir = [1, 1, 0]
+                            self.event_death_counter = max(0, self.event_death_counter - 1)
+
+                elif ir == [1, 0, 0]:
+                    if cmd == 'l':
+                        self.last_ir = [1, 1, 0]
+                        self.event_death_counter += 1
+                    elif cmd == 'r':
+                        self.last_ir = [0, 0, 1]
+                        self.event_progress = max(0, self.event_progress - 1)
+                    elif cmd == 'f':
+                        self.last_ir = [0, 0, 1]
+                        self.event_progress += 1
+
+                elif ir == [1, 1, 0]:
+                    if cmd == 'f':
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+                    elif cmd == 'r':
+                        self.last_ir = [0, 0, 1]
+                        self.event_death_counter = max(0, self.event_death_counter - 1)
+                    elif cmd == 'l':
+                        self.last_ir = [1, 1, 1]
+                        self.event_death_counter += 1
+
+                elif ir == [0, 0, 0]:
+                    if cmd == 'f':
+                        self.last_ir = [0, 1, 0]
+                    elif cmd == 'r':
+                        self.last_ir = [0, 0, 1]
+                    elif cmd == 'l':
+                        self.last_ir = [1, 0, 0]
+
+                elif ir == [0, 1, 0]:
+                    if cmd == 'f':
+                        self.last_ir = [0, 1, 1]
+                        self.event_death_counter += 1
+                    elif cmd == 'r':
+                        self.last_ir = [0, 1, 1]
+                        self.event_death_counter += 1
+                    elif cmd == 'l':
+                        self.last_ir = [1, 0, 0]
+                        self.event_death_counter = 0
+
+                elif ir == [1,0,1]:
+                    if cmd == 'f':
+                        ran = random.random()
+                        if ran < 0.33:
+                            self.last_ir = [1, 0, 1]
+                            self.event_progress += 1
+                        elif ran < 0.66:
+                            self.last_ir = [0, 0, 1]
+                            self.event_progress += 1
+                        else:
+                            self.last_ir = [1, 0, 0]
+                            self.event_progress += 1
+
+            # === Check for completion or failure ===
+            if self.event_progress >= self.event_goal:
+                print(f"event goal reached! {self.event_progress} > {self.event_goal}")
                 self.event_type = None
                 self.last_ir = [0, 0, 0]
-            else:
-                if command == 'f':
-                    self.last_ir = [0, 1, 0]
+            elif self.event_death_counter >= 3:
+                print(f"Reached death condition :( death: {self.event_death_counter}")
+                self.event_type = None
+                self.last_ir = [1, 1, 1]
 
+            self.last_command_last = command
+            return
 
     def _update_distance(self, command):
         if command == 'f':

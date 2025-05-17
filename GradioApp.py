@@ -29,6 +29,12 @@ import random
 import torch
 from collections import deque
 from simulatedSerial import *
+import csv
+import uuid
+
+LOG_FOLDER = os.path.join(os.path.dirname(__file__), 'training_logs')
+os.makedirs(LOG_FOLDER, exist_ok=True)
+
 # === Serial Setup ===
 ports = list(serial.tools.list_ports.comports())
 SERIAL_PORT = None
@@ -55,7 +61,7 @@ model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 # Please spare my life for spaghetti I will make is moduler later trust me bro
 #TODO Make it modular Trust me bro
 
-
+sensor_history = deque(maxlen=3)
 action_history = deque(maxlen=3)  # Keep last 3 actions
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -66,7 +72,7 @@ class CarAgent:
         self.n_game = 0
         self.extra_games = 0
         self.epsilon = 0  # exploration randomness
-        self.gamma = 0.9  # discount rate
+        self.gamma = 0.95  # discount rate
         self.memory = deque(maxlen=MAX_MEMORY)
         self.model = model
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
@@ -87,7 +93,7 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 80 - self.n_game - self.extra_games # decrease randomness over time
+        self.epsilon = 300 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
         if random.randint(0, 200) < self.epsilon:
             move = random.randint(0, 2)
@@ -113,6 +119,7 @@ thread = False
 turn_to_left = True
 NORMAL = False
 reading_thread = None
+score_history = deque(maxlen=50)
 
 # === Serial Read Thread ===
 def update_reading_thread():
@@ -327,7 +334,7 @@ def manual_command(cmd):
 def load_or_create_agent():
     global agent
     load = False
-    model = Linear_QNet(14, 256, 3)
+    model = Linear_QNet(28, 256, 3)
     if os.path.exists(model_path):
         model.load_model(file_name='model.pth')
         text = "✅ Loaded existing model."
@@ -377,7 +384,7 @@ def get_state_from_car():
     return np.array(state, dtype=int)
 
 DIST_REWARD_MATRIX = [
-    [-30, 10, 20, 20],  # very close
+    [-50, 10, 20, 20],  # very close
     [-10, -10, 5, 5],  # close
     [-0.5, -0.5, 0.5, 0.5],  # far
     [-0.5, -0.5, 0.5, 0.5],  # very far
@@ -385,13 +392,13 @@ DIST_REWARD_MATRIX = [
 
 IR_REWARD_MATRIX = [
     [0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5],
-    [5, -5, -10, -15, -2.5, -10, -15, -20],
-    [10, 5, -10, -15, 5, 0, -15, -20],
-    [15, 5, 5, -15, 5, 0, -15, -20],
-    [5, -2.5, -10, -15, -5, -10, -15, -20],
-    [10, 0, -5, -10, 5, 0, -10, -20],
-    [15, 5, 5, -15, 5, 0, -15, -20],
-    [20, 15, 10, 5, 15, 10, 5, -20]
+    [20, -5, -10, -15, -2.5, -10, -15, -30],
+    [20, 5, -10, -15, 5, 0, -15, -30],
+    [20, 5, 5, -15, 5, 0, -15, -30],
+    [20, -2.5, -10, -15, -5, -10, -15, -30],
+    [20, 0, -5, -10, 5, 0, -10, -30],
+    [25, 5, 5, -15, 5, 0, -15, -30],
+    [20, 15, 10, 5, 15, 10, 5, -30]
 ]
 
 def compute_reward(prev_state, next_state, action_taken, paused):
@@ -421,14 +428,13 @@ def compute_reward(prev_state, next_state, action_taken, paused):
 
     # return the reward
     if paused:
-        reward = distance_reward + ir_reward - 50
+        reward = distance_reward + ir_reward - 10
     else:
         reward = distance_reward + ir_reward
     # if previous ir were zeros and action was forward
     if np.all(prev_ir == 0) and action_taken[0] == 1 and (prev_distance[3] == 1 or prev_distance[2] == 1):
         reward += 2
-    print(
-        f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
+
 
     # === Repetition penalty ===
     recent = list(action_history)
@@ -442,6 +448,8 @@ def compute_reward(prev_state, next_state, action_taken, paused):
     if len(recent) >= 3 and all(a in ("l", "r") for a in recent) and "f" not in recent:
         reward -= 10  # strong penalty if forward is missing completely
 
+    print(
+        f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
     return reward
 
 ACTION_ENCODING = {
@@ -451,13 +459,24 @@ ACTION_ENCODING = {
 }
 
 def extend_state_with_history(state, history, paused_flag):
-    recent = list(history)[-2:]
-    while len(recent) < 2:
-        recent.insert(0, None)
+    # Store only the sensor part (distance + IR) from current state into history
+    sensor_history.append(state[:7])  # 4 distance one-hot + 3 IR
 
-    encoded = [ACTION_ENCODING[a] if a else [0, 0, 0] for a in recent]
-    flat = [x for trio in encoded for x in trio]
-    return np.append(state, flat + [int(paused_flag)])
+    # Last 2 actions
+    recent_actions = list(history)[-2:]
+    while len(recent_actions) < 2:
+        recent_actions.insert(0, None)
+    encoded_actions = [ACTION_ENCODING[a] if a else [0, 0, 0] for a in recent_actions]
+    flat_actions = [x for trio in encoded_actions for x in trio]
+
+    # Last 2 sensor states (excluding current one)
+    recent_sensors = list(sensor_history)[-3:-1]
+    while len(recent_sensors) < 2:
+        recent_sensors.insert(0, [0] * 7)
+    flat_sensors = [x for s in recent_sensors for x in s]
+
+    return np.append(state, flat_actions + flat_sensors + [int(paused_flag)])
+
 
 def execute_action(action):
     global action_history
@@ -488,7 +507,12 @@ def stop_training():
 
 def start_training():
     global ML_RUNNING, ML_PAUSED, agent, total_score
+    log_filename = f"log_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+    LOG_PATH = os.path.join(LOG_FOLDER, log_filename)
 
+    with open(LOG_PATH, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["timestamp", "episode", "episode_score", "avg_score"])
     if agent is None:
         print("❌ Error: Agent not loaded. Please load or create the agent first.")
         return "❌ Agent not loaded. Please load or create the agent first."
@@ -503,7 +527,8 @@ def start_training():
     print("🚀 Training started.")
     yield "🚀 Training started."
     while ML_RUNNING:
-        if ((state_old[5] == 1 or state_old[0] == 1) and action[0] == 1) and SIMULATION is True:
+        if (state_old[0] == 1 and state_old[4] == 1 and state_old[5] == 1 and state_old[6] == 1 and action[
+            0] == 1) and SIMULATION is True:
             ML_PAUSED = True
             current_steps = -1
 
@@ -521,27 +546,47 @@ def start_training():
             current_steps = 0
 
         if ML_PAUSED:
-            reward = compute_reward(state_old, state_new, action, paused=True)
-            done = True
-            agent.train_short_memory(state_old, action, reward, state_new, done)
-            agent.remember(state_old, action, reward, state_new, done)
-            episode_score += reward
+            if current_steps != 0:
+                reward = compute_reward(state_old, state_new, action, paused=True)
+                done = True
+                agent.train_short_memory(state_old, action, reward, state_new, done)
+                agent.remember(state_old, action, reward, state_new, done)
+                episode_score += reward
+            else:
+                # Don't penalize or reward on timeout
+                done = True
+
+            # Always do these:
             agent.n_game += 1
-            total_score += episode_score
-            avg_score = total_score / agent.n_game
+            score_history.append(episode_score)
+            avg_score = sum(score_history) / len(score_history)
 
             agent.train_long_memory()
             agent.model.save()
 
+            timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
             message = f"Training paused. Reposition the robot. ✅ Episode {agent.n_game} saved. episode Score: {episode_score}, Avg Score: {avg_score:.2f}"
             print(message)
+
+            # Log to CSV
+            with open(LOG_PATH, mode='a', newline='') as file:
+                writer = csv.writer(file)
+                writer.writerow([timestamp, agent.n_game, episode_score, avg_score])
+
             yield message
+
             episode_score = 0
             while ML_PAUSED and ML_RUNNING:
+
                 time.sleep(0.1)
                 if SIMULATION is True:
                     time.sleep(0.5)
                     ML_PAUSED = False
+
+            # Clear history after pause ends (i.e., before new episode)
+            ser.reset()
+            sensor_history.clear()
+            action_history.clear()
             continue
 
         reward = compute_reward(state_old, state_new, action, paused=False)
@@ -554,6 +599,59 @@ def start_training():
 
     print("🛑 Training stopped.")
     yield "🛑 Training stopped."
+
+def start_inference():
+    global ML_RUNNING, ML_PAUSED, agent
+
+    if agent is None:
+        print("❌ Error: Agent not loaded. Please load or create the agent first.")
+        return "❌ Agent not loaded. Please load or create the agent first."
+
+    agent.extra_games = 1000  # Disable randomness
+    ML_RUNNING = True
+    ML_PAUSED = False
+    MAX_STEPS = 100
+    current_steps = 0
+    episode_score = 0
+    print("🚗 Inference started (no training).")
+    yield "🚗 Inference started. Running model at full capacity."
+
+    while ML_RUNNING:
+        state_old = extend_state_with_history(get_state_from_car(), action_history, ML_PAUSED)
+        action = agent.get_action(state_old)
+        execute_action(action)
+        time.sleep(0.01)
+        read_serial()
+        state_new = extend_state_with_history(get_state_from_car(), action_history, ML_PAUSED)
+
+        reward = compute_reward(state_old, state_new, action, paused=False)
+        episode_score += reward
+        current_steps += 1
+        print(f"Step {current_steps}: reward = {reward:.2f}, total = {episode_score:.2f}")
+
+        # Auto-pause condition (e.g., episode complete)
+        if current_steps >= MAX_STEPS:
+            ML_PAUSED = True
+            current_steps = 0
+
+        if ML_PAUSED:
+            print(f"⏸️ Paused. Episode total reward: {episode_score:.2f}")
+            yield f"⏸️ Paused. Episode total reward: {episode_score:.2f}"
+
+            episode_score = 0
+            # Wait until unpaused
+            while ML_PAUSED and ML_RUNNING:
+                ser.reset()
+                time.sleep(0.1)
+
+
+            # Clear history before next episode
+            sensor_history.clear()
+            action_history.clear()
+            continue
+
+    print("🛑 Inference stopped.")
+    yield "🛑 Inference stopped."
 
 def set_extra_games(n):
     if agent:
@@ -663,6 +761,7 @@ with gr.Blocks() as app:
             start_btn = gr.Button("Start Training")
             pause_btn = gr.Button("Pause / Resume Episode")
             stop_btn = gr.Button("Stop Training")
+            start_infer_btn = gr.Button("Run Inference Only")
             extra_games_input = gr.Number(label="Extra Games", value=0)
             set_extra_btn = gr.Button("Set Extra Games")
             safeguard_btn = gr.Button("📦 Safeguard Save")
@@ -690,6 +789,7 @@ with gr.Blocks() as app:
         stop_btn.click(fn=stop_training, outputs=status_text)
         set_extra_btn.click(set_extra_games, inputs=extra_games_input, outputs=status_text)
         safeguard_btn.click(safeguard_save, outputs=status_text)
+        start_infer_btn.click(fn=start_inference, outputs=status_text)
 
     # === Gradio UI Update ===
     normal_init.click(lambda: gr.update(visible=True), outputs=normal_mode_controls_Row1)
