@@ -93,9 +93,9 @@ class CarAgent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def get_action(self, state):
-        self.epsilon = 300 - self.n_game - self.extra_games # decrease randomness over time
+        self.epsilon = 200 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
-        if random.randint(0, 200) < self.epsilon:
+        if random.randint(0, 300) <  max(20, self.epsilon):
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
@@ -391,14 +391,14 @@ DIST_REWARD_MATRIX = [
 ]
 
 IR_REWARD_MATRIX = [
-    [0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5],
-    [20, -5, -10, -15, -2.5, -10, -15, -30],
-    [20, 5, -10, -15, 5, 0, -15, -30],
-    [20, 5, 5, -15, 5, 0, -15, -30],
-    [20, -2.5, -10, -15, -5, -10, -15, -30],
-    [20, 0, -5, -10, 5, 0, -10, -30],
-    [25, 5, 5, -15, 5, 0, -15, -30],
-    [20, 15, 10, 5, 15, 10, 5, -30]
+    [5,-0.5, -0.5,-0.5,-0.5,-0.5, -0.5, -0.5],
+    [20,  0,  -10, -10,   0,   0,  -15, -30],
+    [20,  5,  -10, -10,   5,   5,  -15, -30],
+    [20,  5,  -10, -10,   5,   5,  -15, -30],
+    [20,  0,  -10, -10,   0,   0,  -15, -30],
+    [20,  0,  -10, -10,   0,   0,  -10, -30],
+    [25,  5,  -10, -10,   5,   5,  -15, -30],
+    [20, 10,   10,  10,  10,  10,   10, -30]
 ]
 
 def compute_reward(prev_state, next_state, action_taken, paused):
@@ -528,7 +528,7 @@ def start_training():
     ML_RUNNING = True
     ML_PAUSED = False
     total_score = 0
-    MAX_STEPS = 100
+    MAX_STEPS = 128
     current_steps = 0
     current_steps_2 = 0
     episode_score = 0

@@ -25,7 +25,7 @@ class SimulatedSerial:
     def __init__(self):
         print("⚠ Simulated serial initialized — no real Arduino connected.")
         self.last_ir = [0, 0, 0]
-        self.last_distance = 100
+        self.last_distance = 300
         self.last_command = None
         self.last_command_last = None
         self.forward_counter = 0
@@ -58,7 +58,7 @@ class SimulatedSerial:
 
     def reset(self):
         self.last_ir = [0, 0, 0]
-        self.last_distance = 100
+        self.last_distance = 300
         self.last_command = None
         self.last_command_last = None
         self.forward_counter = 0
@@ -124,7 +124,7 @@ class SimulatedSerial:
             if command != 'f':
                 chance *= 2
                 # === Chance to trigger an event ===
-            if random.random() < 0.10:
+            if random.random() < 0.2:
                 self.event_type = random.choice(["corridor", "uturn"])
                 self.event_entry = "left" if random.random() < 0.5 else "right"
                 self.event_progress = 0
