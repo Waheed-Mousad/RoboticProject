@@ -46,4 +46,5 @@ websockets~=15.0.1
 six~=1.17.0
 tqdm~=4.67.1
 python-multipart~=0.0.20
-torch
+torch~=2.7.0
+matplotlib~=3.10.3

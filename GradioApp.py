@@ -60,13 +60,22 @@ model_path = os.path.join(os.path.dirname(__file__), 'model', 'model.pth')
 # === Globals ===
 # Please spare my life for spaghetti I will make is moduler later trust me bro
 #TODO Make it modular Trust me bro
+"""
+ dear reader, I know I said I will make is moduler, however when I wrote this code only I, allah and github co-pilot
+ knew how it worked, now only allah the all-mighty know, I made a huge mistake of using tenth of global variables, and
+ alot of dependency between functions, when ever I try to make it moduler it breaks. basically what I am trying to say, 
+ the code is almost 900 lines of code and almost unreadable, bring coffe before trying to read it, actually bring 2
+"""
+sensor_history = deque(maxlen=3) # keep the last 3 sensor reading, this is for ML related training
+action_history = deque(maxlen=3)  # Keep the last 3 actions, this is for ML related training
+MAX_MEMORY = 100_000 # max memory size for agent
+BATCH_SIZE = 1000 # how many memory to learn in one go
+LR = 0.001 # learning rate
 
-sensor_history = deque(maxlen=3)
-action_history = deque(maxlen=3)  # Keep last 3 actions
-MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
-LR = 0.001
-
+# this is the agent class, it the agent. for ML, reinforcement learning to be specific
+# this is mostly taken from
+# Goswami, V. (n.d.). SnakeGameAI [Computer software]. GitHub. https://github.com/vedantgoswami/SnakeGameAI
+# with small changes
 class CarAgent:
     def __init__(self, model):
         self.n_game = 0
@@ -95,7 +104,12 @@ class CarAgent:
     def get_action(self, state):
         self.epsilon = 200 - self.n_game - self.extra_games # decrease randomness over time
         final_move = [0, 0, 0]
-        if random.randint(0, 300) <  max(20, self.epsilon):
+        if self.extra_games > 999: # no randomness at all if extra games is greater than 999
+            state0 = torch.tensor(state, dtype=torch.float)
+            prediction = self.model(state0)
+            move = torch.argmax(prediction).item()
+            final_move[move] = 1
+        elif random.randint(0, 300) <  max(20, self.epsilon):
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
@@ -107,27 +121,29 @@ class CarAgent:
 
 ML_RUNNING = False  # controls overall training loop
 ML_PAUSED = False   # controls pause/resume between episodes
-agent = None
-total_score = 0
-scan_trigger_distance = 40
-resume_forward_distance = 80
-turning_threshhold = 1
-latest_readings = {"distance": 0, "ir": [0, 0, 0]}
-current_mode = "manual"  # manual, line, avoid
-latest_mode = "manual"
-thread = False
-turn_to_left = True
-NORMAL = False
-reading_thread = None
-score_history = deque(maxlen=50)
+agent = None #by defualt agent is none.
+total_score = 0 # total score the agent has gained over all episodes
+scan_trigger_distance = 40 # I don't remember what is this
+resume_forward_distance = 80 # I don't remember what is this
+turning_threshhold = 1 # I don't remember what is this
+latest_readings = {"distance": 0, "ir": [0, 0, 0]} #this is latest reading of sensors
+current_mode = "manual"  # manual, line, avoid this is for normal mode
+latest_mode = "manual" # again for normal mode
+thread = False # this will allow the thread (I believe for contsant reading in normal mode) to keep looping
+turn_to_left = True # I don't remember what is this
+NORMAL = False # is it normal mode or ML mode?
+reading_thread = None # actually this is for constant reading thread in ML mod, not sure what the previous was
+# I think for the modes in normal mode
+score_history = deque(maxlen=50) # save the last 50 episodes score
 
 # === Serial Read Thread ===
 def update_reading_thread():
     global latest_readings
-    while NORMAL:
+    while NORMAL: #only run if in normal mode
         read_serial()
         time.sleep(0.05)
 
+# === Read serial and update latest reading ===
 def read_serial():
     global latest_readings
     try:
@@ -147,8 +163,9 @@ def read_serial():
         return
 
 
-
+# === initialise mode ===
 def start_normal_mode():
+    # this will make ML flags false and make normal flag true, and finally start constant reading thread
     global NORMAL, reading_thread, ML_RUNNING, ML_PAUSED
     # stop ML mode if active
     ML_RUNNING = False
@@ -162,6 +179,7 @@ def start_normal_mode():
 
 def start_ml_mode():
     global NORMAL, thread
+    # basically make normal flag False and close any other normal related thread
     NORMAL = False     # stop reading thread
     thread = False     # stop avoid_obstacle or avoid_line threads
 
@@ -178,6 +196,7 @@ def send_speed(speed):
     send(f"S{speed}\n")
 # === ML mod functions     ===
 def ML_forward():
+    # move forward, stop if time out or sensor changed
     prev_readings = get_state_from_car()
     send('f')
     start = time.time()
@@ -188,8 +207,8 @@ def ML_forward():
         time.sleep(0.005)
     send('s')
 
-
 def ML_backward():
+    # move backward, stop if time out or sensor changed note: this is not used
     prev_readings = get_state_from_car()
     send('b')
     start = time.time()
@@ -201,6 +220,7 @@ def ML_backward():
     send('s')
 
 def ML_left():
+    # turn left, stop if time out or sensor changed
     prev_readings = get_state_from_car()
     send('l')
     start = time.time()
@@ -212,6 +232,7 @@ def ML_left():
     send('s')
 
 def ML_right():
+    # turn right, stop if time out or sensor changed
     prev_readings = get_state_from_car()
     send('r')
     start = time.time()
@@ -222,8 +243,15 @@ def ML_right():
             break
         time.sleep(0.001)
     send('s')
+
 # === Normal mod functions ===
 def avoid_obstacle():
+    """
+    constantly check if distance sensor reading is lower then threshold
+    if lower, turn to the left, until freed, if not for freed for a time
+    next turn is opposite direction
+    :return:
+    """
     global turn_to_left
     print("obstacle mode")
     while thread:
@@ -251,6 +279,19 @@ def avoid_obstacle():
     print("exiting obstacle avoidance thread")
 
 def avoid_line():
+    """
+    | IRleft | IRmiddle | IRright | Decision |
+    |--------|----------|---------|----------|
+    |   0    |    0     |    0    | forward  |
+    |   0    |    0     |    1    | left     |
+    |   0    |    1     |    0    | left     |
+    |   0    |    1     |    1    | left     |
+    |   1    |    0     |    0    | right    |
+    |   1    |    0     |    1    | forward  |
+    |   1    |    1     |    0    | right    |
+    |   1    |    1     |    1    | left     |
+    :return:
+    """
     print("line mode")
     while thread:
         if latest_readings["ir"][0] == 0 and latest_readings["ir"][1] == 0 and latest_readings["ir"][2] == 0:
@@ -273,6 +314,7 @@ def avoid_line():
         
     print("exiting line avoidance thread")
 
+# this function will update the scans threshold for obstacle avoidance mode
 def update_scan_thresholds(scan_val, resume_val):
     global scan_trigger_distance, resume_forward_distance
     # Enforce resume > scan
@@ -282,8 +324,9 @@ def update_scan_thresholds(scan_val, resume_val):
     resume_forward_distance = resume_val
     return scan_val, resume_val
 
-# === Gradio Control Functions ===
+# === Gradio Control Functions for normal mode ===
 def update():
+    # this functon update the UI with latest reading and information, it is tied to a timer
     global current_mode
     global latest_mode
     global thread
@@ -305,24 +348,29 @@ def update():
     return current_mode, latest_readings["distance"], *latest_readings["ir"]
 
 def set_mode_manual():
+    # set the mode to manual
     global current_mode
     current_mode = "manual"
     send('s')
     return "manual"
 
 def set_mode_line():
+    # set the mode to line following
     global current_mode
     current_mode = "line"
     send('s')
     return "line"
 
 def set_mode_avoid():
+    # set the mode to obstacle avoidance3
     global current_mode
     current_mode = "avoid"
     send('s')
     return "avoid"
 
 def manual_command(cmd):
+    # change mode to manual if not already manual
+    # then send the command to the Arduino
     print(f"manual command: {cmd}")
     global current_mode
     current_mode = "manual"
@@ -330,36 +378,74 @@ def manual_command(cmd):
     return update()
 
 # === ML Functions ===
+def list_available_models():
+    """
+    list the available models for the drop down menu
+    :return:
+    """
+    model_dir = os.path.join(os.path.dirname(__file__), 'model')
+    os.makedirs(model_dir, exist_ok=True)
+    return [f for f in os.listdir(model_dir) if f.endswith('.pth')]
 
-def load_or_create_agent():
+def load_selected_model(filename):
+    """
+    load the selected model to the agent.
+    :param filename:
+    :return:
+    """
     global agent
-    load = False
+    full_path = os.path.join(os.path.dirname(__file__), 'model', filename)
     model = Linear_QNet(28, 256, 3)
-    if os.path.exists(model_path):
-        model.load_model(file_name='model.pth')
-        text = "✅ Loaded existing model."
-        load = True
-    else:
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        model.save(file_name='model.pth')
-        text = "🆕 Created and saved new model."
-        load = False
-
-    agent = CarAgent(model)
-    if load:
+    if os.path.exists(full_path):
+        model.load_model(file_name=filename)
+        agent = CarAgent(model)
         agent.extra_games = 0
-    return text
-
-def delete_model():
-    global agent
-    if os.path.exists(model_path):
-        os.remove(model_path)
-        agent = None
-        return "✅ Model deleted."
+        return f"✅ Loaded model: {filename}"
     else:
-        return "❌ No model found to delete."
+        return "❌ Model not found."
+
+def create_new_model(filename):
+    """
+    create a new model, read the name from the text box
+    :param filename:
+    :return:
+    """
+    global agent
+    if not filename.endswith('.pth'):
+        filename += '.pth'
+    full_path = os.path.join(os.path.dirname(__file__), 'model', filename)
+    model = Linear_QNet(28, 256, 3)
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    model.save(file_name=filename)
+    agent = CarAgent(model)
+    return f"🆕 Created and saved new model: {filename}"
+
+def delete_model(filename):
+    """
+    delete model
+    :param filename:
+    :return:
+    """
+    global agent
+    if not filename.endswith('.pth'):
+        filename += '.pth'
+    full_path = os.path.join(os.path.dirname(__file__), 'model', filename)
+    if os.path.exists(full_path):
+        os.remove(full_path)
+        if agent and hasattr(agent.model, 'file_name') and agent.model.file_name == filename:
+            agent = None
+        return f"✅ Deleted model: {filename}"
+    else:
+        return "❌ Model not found."
 
 def map_distance_onehot(distance):
+    """
+    turn the distance from value between 0 and 400
+    to one hot encoded array
+    example: 70 to [0, 0, 1, 0]
+    :param distance:
+    :return: one hot encoded array for distance
+    """
     if distance < 10:
         category = 0  # very close
     elif distance < 20:
@@ -374,6 +460,10 @@ def map_distance_onehot(distance):
     return one_hot
 
 def get_state_from_car():
+    """
+    read the sensor value, one hot encoded distance and IR sensor reading
+    :return: numpy 1D array
+    """
     read_serial() # read the latest data
     distance_onehot = map_distance_onehot(latest_readings["distance"])
     ir_left = latest_readings["ir"][0]
@@ -382,6 +472,18 @@ def get_state_from_car():
 
     state = distance_onehot + [ir_left, ir_middle, ir_right]
     return np.array(state, dtype=int)
+"""
+# distance reward matrix
+
+             | 0,0,0,1 | 0,0,1,0 | 0,1,0,0 | 1,0,0,0
+-------------|---------|---------|---------|---------
+0,0,0,1      |   0.5   |   0.5   |   0     |   0
+0,0,1,0      |   0.5   |   0.5   |   0     |   0
+0,1,0,0      |   5     |   5     | -10     | -10
+1,0,0,0      |  10     |  10     |  10     | -50
+
+the matrix is reversed from the previous table
+"""
 
 DIST_REWARD_MATRIX = [
     [-50, 10, 20, 20],  # very close
@@ -390,18 +492,43 @@ DIST_REWARD_MATRIX = [
     [-0.5, -0.5, 0.5, 0.5],  # very far
 ]
 
+"""
+IR reward matrix, give reward on previous sensors values and next sensor values
+
+           | 0,0,0 | 0,0,1 | 0,1,0 | 0,1,1 | 1,0,0 | 1,0,1 | 1,1,0 | 1,1,1
+-----------|-------|-------|-------|-------|-------|-------|-------|-------
+0,0,0      |   5   | -0.5  | -0.5  | -0.5  | -0.5  | -0.5  | -0.5  | -0.5
+0,0,1      |  20   |   0   | -10   | -10   |   0   |   0   | -10   | -30
+0,1,0      |  20   |   5   | -10   | -10   |   5   |   5   | -10   | -30
+0,1,1      |  20   |   5   | -10   | -10   |   5   |   5   | -10   | -30
+1,0,0      |  20   |   0   | -10   | -10   |   0   |   0   | -10   | -30
+1,0,1      |  20   |   0   | -10   | -10   |   0   |   0   | -10   | -30
+1,1,0      |  20   |   5   | -10   | -10   |   5   |   5   | -10   | -30
+1,1,1      |  20   |  10   |  10   |  10   |  10   |  10   |  10   | -30
+
+"""
 IR_REWARD_MATRIX = [
     [5,-0.5, -0.5,-0.5,-0.5,-0.5, -0.5, -0.5],
-    [20,  0,  -10, -10,   0,   0,  -15, -30],
+    [20,  -0.5,  -10, -10,   -0.5,   -0.5,  -15, -30],
     [20,  5,  -10, -10,   5,   5,  -15, -30],
     [20,  5,  -10, -10,   5,   5,  -15, -30],
-    [20,  0,  -10, -10,   0,   0,  -15, -30],
-    [20,  0,  -10, -10,   0,   0,  -10, -30],
+    [20,  -0.5,  -10, -10,   -0.5,   -0.5,  -15, -30],
+    [20,  -0.5,  -10, -10,   -0.5,   -0.5,  -10, -30],
     [25,  5,  -10, -10,   5,   5,  -15, -30],
     [20, 10,   10,  10,  10,  10,   10, -30]
 ]
 
 def compute_reward(prev_state, next_state, action_taken, paused):
+    """
+    Calculates the reward signal based on state transitions and action taken.
+
+    :param prev_state: The agent's previous state vector, a list of 14 elements
+                       (4 distance one-hot + 3 IR + 2 previous actions + 2 previous sensor states + paused flag)
+    :param next_state: The agent's new state after taking the action
+    :param action_taken: One-hot encoded list representing the action [forward, left, right]
+    :param paused: Boolean indicating whether training is currently paused
+    :return: A numeric reward value reflecting progress, penalties, or reinforcement
+    """
     # turn state into index
     # the state is a list of 7 elements like this [0 0 0 1 0 0 1]
     # last 3 are ir values left middle right
@@ -439,19 +566,23 @@ def compute_reward(prev_state, next_state, action_taken, paused):
     # === Repetition penalty ===
     recent = list(action_history)
 
-    if len(recent) >= 3 and all(a == "l" for a in recent[-4:]):
-        reward -= (len([a for a in recent[-10:] if a == "l"]) - 10)  # increasing penalty
+    # Penalize if all 3 recent actions are left
+    if len(recent) == 3 and all(a == "l" for a in recent):
+        reward -= 5  # adjust penalty as needed
 
-    if len(recent) >= 3 and all(a == "r" for a in recent[-4:]):
-        reward -= (len([a for a in recent[-10:] if a == "r"]) - 10)
+    # Penalize if all 3 recent actions are right
+    if len(recent) == 3 and all(a == "r" for a in recent):
+        reward -= 5  # adjust penalty as needed
 
-    if len(recent) >= 3 and all(a in ("l", "r") for a in recent) and "f" not in recent:
-        reward -= 10  # strong penalty if forward is missing completely
+    # Penalize if only turning (left or right) and no forward
+    if len(recent) == 3 and all(a in ("l", "r") for a in recent) and "f" not in recent:
+        reward -= 10  # stronger penalty for being stuck turning
 
     print(
         f"prev_state: {prev_state}, next_state: {next_state}, action_taken: {action_taken}, reward: {reward}, paused: {paused}")
     return reward
 
+# action encoding history
 ACTION_ENCODING = {
     "f": [1, 0, 0],
     "l": [0, 1, 0],
@@ -459,6 +590,14 @@ ACTION_ENCODING = {
 }
 
 def extend_state_with_history(state, history, paused_flag):
+    """
+    this function will extend the 7 states input and make them into 28 state input
+    that included the current states, the previous 2 states and 2 actions as well as a paused flag
+    :param state:
+    :param history:
+    :param paused_flag:
+    :return:
+    """
     # Store only the sensor part (distance + IR) from current state into history
     sensor_history.append(state[:7])  # 4 distance one-hot + 3 IR
 
@@ -479,6 +618,7 @@ def extend_state_with_history(state, history, paused_flag):
 
 
 def execute_action(action):
+    # execute action based on what recieved, also save in the action history que
     global action_history
     if action[0] == 1:
         action_history.append("f")
@@ -492,6 +632,7 @@ def execute_action(action):
 
 
 def toggle_pause():
+    # reverse the paused flag
     global ML_PAUSED
     ML_PAUSED = not ML_PAUSED
     if ML_PAUSED:
@@ -501,11 +642,27 @@ def toggle_pause():
 
 
 def stop_training():
+    # stop training (and inference)
     global ML_RUNNING
     ML_RUNNING = False
     return "Training stopped."
 
 def start_training():
+    """
+    Starts the reinforcement learning training loop for the smart car agent.
+
+    This function controls one full training lifecycle:
+    - Initializes training logs and flags
+    - Repeatedly interacts with the environment by collecting state, selecting an action,
+      executing it, and observing the result
+    - Computes reward from state transitions and stores experience in memory
+    - Triggers short- and long-term training for the model
+    - Periodically pauses the episode to allow repositioning or resetting the robot
+    - Saves progress, including model weights and training metrics, to a CSV log file
+
+    Yields:
+        str: Status updates such as training start, pause, and episode summaries.
+    """
     global ML_RUNNING, ML_PAUSED, agent, total_score
     log_filename = f"log_{time.strftime('%Y%m%d_%H%M%S')}.csv"
     LOG_PATH = os.path.join(LOG_FOLDER, log_filename)
@@ -620,6 +777,10 @@ def start_training():
     yield "🛑 Training stopped."
 
 def start_inference():
+    """
+    the same as training function, just does not train memory and does not save logs
+    :return:
+    """
     global ML_RUNNING, ML_PAUSED, agent
 
     if agent is None:
@@ -673,6 +834,11 @@ def start_inference():
     yield "🛑 Inference stopped."
 
 def set_extra_games(n):
+    """
+    set extra games to control epsilon value
+    :param n:
+    :return:
+    """
     if agent:
         agent.extra_games = int(n)
         return f"✅ extra_games set to {n}"
@@ -689,6 +855,10 @@ def safeguard_save():
     return "❌ Agent not loaded."
 
 def start_training_button():
+    """
+    start training
+    :return:
+    """
     global ML_RUNNING
 
     if ML_RUNNING:
@@ -702,6 +872,14 @@ with gr.Blocks() as app:
     gr.Markdown("# Smart Car Control Panel")
 
     with gr.Tab("Normal"):
+        # === Gradio UI: Normal Mode Tab ===
+        # This tab provides manual and rule-based control options for the smart car.
+        # - Users can initialize normal mode and view live sensor data (distance + IR).
+        # - Includes buttons to switch between manual, line-follow, and obstacle-avoid modes.
+        # - Manual driving controls (↑ ↓ ← → Stop) send direct commands to the car.
+        # - Calibration sliders adjust motor offsets for left/right wheels.
+        # - Speed control and obstacle thresholds are adjustable via sliders.
+        # - The interface updates every 0.5s to reflect the current state of the car.
         gr.Markdown("Normal Mode Tab")
         normal_init = gr.Button("Initialize Normal Mode ")
         with gr.Row(visible=False) as normal_mode_controls_Row1:
@@ -764,6 +942,15 @@ with gr.Blocks() as app:
         timer.tick(fn=update_ui, outputs=[mode, dist, irL, irM, irR])
 
     with gr.Tab("ML"):
+        # === Gradio UI: ML Mode Tab ===
+        # This tab provides controls for managing the machine learning model used by the smart car.
+        # - Users can initialize ML mode and interact with the agent via forward/left/right buttons.
+        # - A dropdown lists available saved models for selection and loading.
+        # - Users can create new models, delete existing ones, and refresh the model list.
+        # - Once a model is loaded, users can start training, pause/resume episodes, or run inference.
+        # - Extra training parameters like "extra_games" can be set.
+        # - A safeguard button allows saving the current model with a timestamped filename.
+        # - Training and inference progress is shown through a status text box.
         gr.Markdown("ML Mode Tab")
         gr.Markdown("🚧 *Future machine learning features will go here.*")
         ml_init = gr.Button("Initialize ML Mode ")
@@ -772,7 +959,11 @@ with gr.Blocks() as app:
             ml_f = gr.Button("↑ Forward")
             ml_l = gr.Button("← Left")
             ml_r = gr.Button("→ Right")
-            load_model_btn = gr.Button("Load or Create agent")
+            model_dropdown = gr.Dropdown(choices=list_available_models(), label="Select Model", interactive=True)
+            refresh_models_btn = gr.Button("🔄 Refresh Models List")
+            create_model_text = gr.Textbox(label="New Model Name (e.g., my_model.pth)")
+            create_model_btn = gr.Button("Create New Model")
+            load_model_btn = gr.Button("Load Selected Model")
             delete_model_btn = gr.Button("Delete Model")
 
 
@@ -798,9 +989,12 @@ with gr.Blocks() as app:
         ml_l.click(lambda: ML_left(), outputs=[])
         ml_r.click(lambda: ML_right(), outputs=[])
 
-        load_model_btn.click(fn=load_or_create_agent, outputs=status_text)
+        refresh_models_btn.click(fn=lambda: gr.update(choices=list_available_models()), outputs=model_dropdown)
+        load_model_btn.click(fn=load_selected_model, inputs=model_dropdown, outputs=status_text)
+        create_model_btn.click(fn=create_new_model, inputs=create_model_text, outputs=status_text)
+
         load_model_btn.click(lambda: gr.update(visible=True), outputs=ml_mode_loaded_model)
-        delete_model_btn.click(fn=delete_model, outputs=status_text)
+        delete_model_btn.click(fn=delete_model, inputs=model_dropdown, outputs=status_text)
         delete_model_btn.click(lambda: gr.update(visible=False), outputs=ml_mode_loaded_model)
 
         start_btn.click(fn=start_training, outputs=status_text)
@@ -811,6 +1005,7 @@ with gr.Blocks() as app:
         start_infer_btn.click(fn=start_inference, outputs=status_text)
 
     # === Gradio UI Update ===
+    # for some reason those needed to be outside
     normal_init.click(lambda: gr.update(visible=True), outputs=normal_mode_controls_Row1)
     normal_init.click(lambda: gr.update(visible=True), outputs=normal_mode_controls_Row2)
     normal_init.click(lambda: gr.update(visible=True), outputs=normal_mode_controls_Row3)
@@ -828,6 +1023,6 @@ with gr.Blocks() as app:
     ml_init.click(lambda: gr.update(visible=False), outputs=normal_mode_controls_Row5)
     ml_init.click(start_ml_mode, outputs=[])
 
-
+# lunch the UI
 app.launch(server_name="0.0.0.0", server_port=7860)
 
