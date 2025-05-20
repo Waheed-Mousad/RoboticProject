@@ -218,7 +218,7 @@ def ML_left():
     start = time.time()
     while time.time() - start < 0.5:
 
-        if not np.array_equal(get_state_from_car(), prev_readings):
+        if not (np.array_equal(get_state_from_car(), prev_readings)) and (time.time() - start< 0.1):
             break
         time.sleep(0.001)
     send('s')
@@ -231,7 +231,7 @@ def ML_right():
     time.sleep(0.5)
     while time.time() - start < 0.5:
 
-        if not np.array_equal(get_state_from_car(), prev_readings):
+        if not (np.array_equal(get_state_from_car(), prev_readings)) and (time.time() - start< 0.1):
             break
         time.sleep(0.001)
     send('s')

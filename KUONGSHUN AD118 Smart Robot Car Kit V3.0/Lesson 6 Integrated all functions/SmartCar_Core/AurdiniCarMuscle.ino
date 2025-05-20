@@ -166,7 +166,7 @@ void loop() {
   int irR = digitalRead(IR_R_PIN);
 
   // Send data: DISTANCE, IR_L, IR_M, IR_R
-  Serial.print(distance);
+  Serial.print(100);
   Serial.print(',');
   Serial.print(irL);
   Serial.print(',');
