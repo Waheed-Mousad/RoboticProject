@@ -782,7 +782,7 @@ def start_inference():
     agent.extra_games = 1000  # Disable randomness
     ML_RUNNING = True
     ML_PAUSED = False
-    MAX_STEPS = 100
+    MAX_STEPS = 10000
     current_steps = 0
     episode_score = 0
     print("🚗 Inference started (no training).")
