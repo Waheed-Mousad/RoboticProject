@@ -1,13 +1,5 @@
 # Smart Car Raspberry Pi Control Script with Full Logic + Gradio UI
 """
-real envoirment test result
-batter than expected
-simulation need to improve
-it get stuck at corners for repeated actions = panalise
-still prefer to repeat useless action = panalise
-sometimes likes to move forward no matter what = reduce reward
-maybe add reading thread for ml, make aurdino stops at sensor change,
-take new step at sensor change?
 
 """
 import serial
@@ -38,14 +30,14 @@ os.makedirs(LOG_FOLDER, exist_ok=True)
 # === Serial Setup ===
 ports = list(serial.tools.list_ports.comports())
 SERIAL_PORT = None
-for p in ports:
+for p in ports: #scan all serial ports and find the Aurdino
     if "Arduino" in p.description or "ttyACM" in p.device or "USB" in p.device:
         SERIAL_PORT = p.device
         break
 
 BAUD_RATE = 9600
 SIMULATION = False
-if SERIAL_PORT is None:
+if SERIAL_PORT is None: # if no serial found, start simulation
     print("⚠ Arduino not found. Switching to simulated serial.")
     ser = SimulatedSerial()
     SIMULATION = True

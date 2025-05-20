@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import os
 import numpy as np
 
+# source: Goswami, V. (n.d.). SnakeGameAI [Computer software]. GitHub. https://github.com/vedantgoswami/SnakeGameAI
 
 class Linear_QNet(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
