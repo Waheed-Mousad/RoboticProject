@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # Load the CSV
-csv_path = "Model5a.csv"  # change path if needed
+csv_path = "model6.csv"  # change path if needed
 df = pd.read_csv(csv_path)
 
 # Create plots
